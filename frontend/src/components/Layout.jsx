@@ -7,6 +7,7 @@ import {
 import DashboardIcon from '@mui/icons-material/Dashboard'
 import UploadFileIcon from '@mui/icons-material/UploadFile'
 import TableRowsIcon from '@mui/icons-material/TableRows'
+import SettingsIcon from '@mui/icons-material/Settings'
 import MenuIcon from '@mui/icons-material/Menu'
 import BoltIcon from '@mui/icons-material/Bolt'
 
@@ -16,6 +17,7 @@ const NAV = [
   { label: 'Dashboard', path: '/dashboard', icon: <DashboardIcon /> },
   { label: 'Import', path: '/import', icon: <UploadFileIcon /> },
   { label: 'Sessions', path: '/sessions', icon: <TableRowsIcon /> },
+  { label: 'Paramètres', path: '/settings', icon: <SettingsIcon /> },
 ]
 
 export default function Layout({ children }) {

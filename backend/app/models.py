@@ -1,7 +1,6 @@
 from datetime import datetime
 from typing import Optional
 from sqlmodel import Field, SQLModel
-import json
 
 
 class ChargingSession(SQLModel, table=True):
@@ -26,3 +25,10 @@ class ImportLog(SQLModel, table=True):
     total_rows: int
     new_rows: int
     duplicate_rows: int
+
+
+class TariffConfig(SQLModel, table=True):
+    id: int = Field(default=1, primary_key=True)
+    price_hc: float = Field(default=0.1724)  # €/kWh
+    price_hp: float = Field(default=0.2305)  # €/kWh
+    updated_at: datetime = Field(default_factory=datetime.utcnow)

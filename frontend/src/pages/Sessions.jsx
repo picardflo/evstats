@@ -2,10 +2,10 @@ import React, { useState, useEffect, useCallback } from 'react'
 import {
   Box, Typography, Paper, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, TablePagination, Chip, TextField, MenuItem,
-  Grid, CircularProgress, Alert, InputAdornment,
+  Grid, CircularProgress, Alert, Button,
 } from '@mui/material'
-import SearchIcon from '@mui/icons-material/Search'
-import { fetchSessions } from '../api/client'
+import DownloadIcon from '@mui/icons-material/Download'
+import { fetchSessions, buildExportUrl } from '../api/client'
 
 const STATUS_COLORS = {
   'Pull Plug': 'success',
@@ -58,9 +58,18 @@ export default function Sessions() {
 
   return (
     <Box>
-      <Typography variant="h5" fontWeight={700} gutterBottom>
-        Sessions de charge
-      </Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, flexWrap: 'wrap', gap: 1 }}>
+        <Typography variant="h5" fontWeight={700}>Sessions de charge</Typography>
+        <Button
+          variant="outlined"
+          size="small"
+          startIcon={<DownloadIcon />}
+          href={buildExportUrl({ end_status: endStatus !== 'Tous' ? endStatus : undefined, start_date: startDate || undefined, end_date: endDate || undefined })}
+          download="sessions.csv"
+        >
+          Export CSV
+        </Button>
+      </Box>
 
       {/* Filtres */}
       <Paper sx={{ p: 2, mb: 3, borderRadius: 3 }}>
