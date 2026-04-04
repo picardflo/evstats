@@ -17,7 +17,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import {
   Box, Typography, Grid, Paper, ToggleButtonGroup, ToggleButton,
   CircularProgress, Alert, Table, TableBody, TableCell, TableContainer,
-  TableHead, TableRow, Tooltip as MuiTooltip,
+  TableHead, TableRow, Tooltip as MuiTooltip, IconButton,
 } from '@mui/material'
 import TrendingUpIcon from '@mui/icons-material/TrendingUp'
 import TrendingDownIcon from '@mui/icons-material/TrendingDown'
@@ -26,7 +26,12 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid, Legend, PieChart, Pie, Cell,
 } from 'recharts'
-import { fetchDailyStats, fetchMonthlyStats } from '../api/client'
+import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf'
+import DownloadIcon from '@mui/icons-material/Download'
+import { fetchDailyStats, fetchMonthlyStats, fetchHourlyStats, checkAlerts, buildPdfReportUrl } from '../api/client'
+
+// Plages HC/HP pour le fond du graphique horaire (lun-ven hors mer)
+const HC_HOURS = new Set([0,1,2,3,4,5,6,7,23]) // 23h30→07h30 approximé à l'heure
 
 const COLORS = { hc: '#00b4d8', hp: '#e85d04', cost: '#06d6a0', energy: '#ffd60a', savings: '#a855f7' }
 
@@ -115,6 +120,7 @@ export default function Dashboard() {
   const [view, setView] = useState('monthly')
   const [allDaily, setAllDaily] = useState([])
   const [allMonthly, setAllMonthly] = useState([])
+  const [hourly, setHourly] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -122,9 +128,14 @@ export default function Dashboard() {
     setLoading(true)
     setError(null)
     try {
-      const [daily, monthly] = await Promise.all([fetchDailyStats(), fetchMonthlyStats()])
+      const [daily, monthly, hourlyData] = await Promise.all([
+        fetchDailyStats(), fetchMonthlyStats(), fetchHourlyStats(),
+      ])
       setAllDaily(daily)
       setAllMonthly(monthly)
+      setHourly(hourlyData)
+      // Vérification silencieuse des alertes
+      checkAlerts().catch(() => {})
     } catch {
       setError('Impossible de charger les données')
     } finally {
@@ -314,16 +325,64 @@ export default function Dashboard() {
             </ResponsiveContainer>
           </Paper>
 
+          {/* Graphique fréquence horaire */}
+          {hourly.length > 0 && (
+            <Paper sx={{ p: 3, borderRadius: 3, mb: 3 }}>
+              <Typography variant="h6" fontWeight={600} gutterBottom>
+                Fréquence des charges par heure de début
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Les heures en bleu clair sont des Heures Creuses (approximation lun-ven).
+                Mercredi et week-end sont 100% HC.
+              </Typography>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={hourly} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                  <XAxis dataKey="hour" tickFormatter={(h) => `${h}h`} tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} width={40} />
+                  <Tooltip content={({ active, payload, label }) => {
+                    if (!active || !payload?.length) return null
+                    return (
+                      <Paper sx={{ p: 1.5, borderRadius: 2 }}>
+                        <Typography variant="body2" fontWeight={700}>{label}h — {label+1}h</Typography>
+                        <Typography variant="body2">{payload[0].value} sessions</Typography>
+                        <Typography variant="body2" color="text.secondary">{payload[1]?.value?.toFixed(2)} kWh</Typography>
+                        <Typography variant="caption" color={HC_HOURS.has(label) ? COLORS.hc : COLORS.hp}>
+                          {HC_HOURS.has(label) ? 'Heures Creuses' : 'Heures Pleines'} (lun-ven)
+                        </Typography>
+                      </Paper>
+                    )
+                  }} />
+                  <Legend />
+                  <Bar dataKey="sessions" name="Sessions"
+                    fill={COLORS.hc}
+                    radius={[4, 4, 0, 0]}
+                    // Coloration HC/HP selon l'heure
+                    label={false}
+                  >
+                    {hourly.map((entry) => (
+                      <Cell key={entry.hour} fill={HC_HOURS.has(entry.hour) ? COLORS.hc : COLORS.hp} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </Paper>
+          )}
+
           {/* Classement mois */}
           {view === 'monthly' && (
             <Paper sx={{ p: 3, borderRadius: 3 }}>
               <Typography variant="h6" fontWeight={600} gutterBottom>Classement des mois</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                Cliquez sur l'icône PDF pour télécharger le rapport du mois.
+              </Typography>
               <TableContainer>
                 <Table size="small">
                   <TableHead>
                     <TableRow>
                       <TableCell>#</TableCell>
                       <TableCell>Mois</TableCell>
+                      <TableCell align="right">PDF</TableCell>
                       <TableCell align="right">Sessions</TableCell>
                       <TableCell align="right">Énergie (kWh)</TableCell>
                       <TableCell align="right">HC</TableCell>
@@ -340,11 +399,23 @@ export default function Dashboard() {
                       .map((row, i) => {
                         const pct = row.energy_kwh > 0 ? (row.hc_kwh / row.energy_kwh * 100).toFixed(1) : '0.0'
                         const avg = row.sessions > 0 ? (row.cost_eur / row.sessions).toFixed(2) : '0.00'
+                        const [y, m] = row.month.split('-')
                         return (
                           <TableRow key={row.month} hover>
                             <TableCell>{i + 1}</TableCell>
                             <TableCell>
                               {new Date(row.month + '-01').toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}
+                            </TableCell>
+                            <TableCell align="right">
+                              <IconButton
+                                size="small"
+                                component="a"
+                                href={buildPdfReportUrl(+y, +m)}
+                                download={`evstats_${row.month}.pdf`}
+                                sx={{ color: 'text.secondary', '&:hover': { color: '#e85d04' } }}
+                              >
+                                <PictureAsPdfIcon fontSize="small" />
+                              </IconButton>
                             </TableCell>
                             <TableCell align="right">{row.sessions}</TableCell>
                             <TableCell align="right">{row.energy_kwh.toFixed(2)}</TableCell>

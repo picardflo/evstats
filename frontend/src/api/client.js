@@ -1,5 +1,5 @@
 /**
- * Client API — EVSE Stats
+ * Client API — EVSE Stats V2
  *
  * Toutes les requêtes vers le backend FastAPI passent par ce module.
  * Le baseURL "/api" est proxifié par Nginx (prod) ou Vite (dev) vers http://localhost:8000.
@@ -121,4 +121,55 @@ export async function updateTariffConfig(payload) {
 export async function recalculateCosts() {
   const { data } = await api.post('/config/tariff/recalculate')
   return data
+}
+
+// ── Périodes tarifaires (V2) ──────────────────────────────────────────────────
+
+export async function fetchTariffPeriods() {
+  const { data } = await api.get('/config/tariff/periods')
+  return data
+}
+
+export async function addTariffPeriod(payload) {
+  const { data } = await api.post('/config/tariff/periods', payload)
+  return data
+}
+
+export async function deleteTariffPeriod(id) {
+  await api.delete(`/config/tariff/periods/${id}`)
+}
+
+// ── Stats horaires (V2) ───────────────────────────────────────────────────────
+
+export async function fetchHourlyStats() {
+  const { data } = await api.get('/stats/hourly')
+  return data
+}
+
+// ── Alertes (V2) ─────────────────────────────────────────────────────────────
+
+export async function fetchAlertConfig() {
+  const { data } = await api.get('/alerts')
+  return data
+}
+
+export async function updateAlertConfig(payload) {
+  const { data } = await api.put('/alerts', payload)
+  return data
+}
+
+export async function checkAlerts() {
+  const { data } = await api.post('/alerts/check')
+  return data
+}
+
+// ── Rapport PDF (V2) ──────────────────────────────────────────────────────────
+
+/**
+ * Construit l'URL de téléchargement du rapport PDF mensuel.
+ * @param {number} year
+ * @param {number} month
+ */
+export function buildPdfReportUrl(year, month) {
+  return `/api/reports/monthly/${year}/${month}`
 }

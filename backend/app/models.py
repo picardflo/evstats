@@ -1,16 +1,15 @@
 """
 Modèles de données SQLModel (ORM + validation Pydantic).
 
-SQLModel génère automatiquement les tables SQLite et les schémas Pydantic
-à partir de ces classes. Chaque classe avec `table=True` devient une table.
-
 Tables :
   - charging_sessions : sessions de charge parsées et enrichies
   - import_log        : historique des fichiers importés
-  - tariff_config     : tarifs EDF actifs (un seul enregistrement, id=1)
+  - tariff_config     : tarif actif affiché dans l'UI (singleton id=1, kept for compat)
+  - tariff_period     : historique des périodes tarifaires (V2)
+  - alert_config      : configuration des alertes de consommation (V2)
 """
 
-from datetime import datetime
+from datetime import datetime, date
 from typing import Optional
 from sqlmodel import Field, SQLModel
 
@@ -19,67 +18,92 @@ class ChargingSession(SQLModel, table=True):
     """
     Une session de charge importée depuis EVSEMaster.
 
-    La clé de déduplication est `record_id` (numéro d'enregistrement EVSEMaster),
-    ce qui permet d'importer plusieurs exports sans créer de doublons.
-
-    hc_kwh + hp_kwh = energy_kwh (à la précision flottante près)
-    cost_eur = hc_kwh × price_hc + hp_kwh × price_hp
+    La clé de déduplication est `record_id` (numéro d'enregistrement EVSEMaster).
+    hc_kwh + hp_kwh ≈ energy_kwh
+    cost_eur = hc_kwh × price_hc + hp_kwh × price_hp (tarif de la période)
     """
     id: Optional[int] = Field(default=None, primary_key=True)
 
-    # Identification
-    record_id:  str = Field(index=True, unique=True)  # Clé unique EVSEMaster ("Clock XXXXXXXXXX")
-    charger_id: str                                    # Numéro de borne
+    record_id:  str = Field(index=True, unique=True)  # "Clock XXXXXXXXXX"
+    charger_id: str
 
-    # Temporel
-    start_time: datetime   # Début de session
-    end_time:   datetime   # Fin de session
-    duration_minutes: float  # Durée fournie par EVSEMaster (peut ≠ end - start)
+    start_time:       datetime
+    end_time:         datetime
+    duration_minutes: float  # Fourni par EVSEMaster (peut ≠ end - start)
 
-    # Énergie
-    energy_kwh: float  # Total consommé
-    hc_kwh:     float  # Part Heures Creuses (calculée par tariff.py)
-    hp_kwh:     float  # Part Heures Pleines (calculée par tariff.py)
+    energy_kwh: float
+    hc_kwh:     float  # Part HC calculée par tariff.py
+    hp_kwh:     float  # Part HP calculée par tariff.py
+    cost_eur:   float  # Coût = hc_kwh × price_hc + hp_kwh × price_hp
 
-    # Coût
-    cost_eur: float  # Coût calculé avec les tarifs actifs au moment de l'import
-
-    # Statut
-    end_status:  str  # Motif de fin : "Pull Plug", "Fix Time", "Power Down", ou hash RFID
-    start_user:  str  # Initiateur : "Clock" (programmé) ou hash RFID (carte)
+    end_status: str  # "Pull Plug", "Fix Time", "Power Down", ou hash RFID
+    start_user: str  # "Clock" ou hash RFID
 
 
 class ImportLog(SQLModel, table=True):
-    """
-    Historique des fichiers XLSX importés.
-    Permet de tracer quand et quoi a été importé, et combien de sessions
-    étaient nouvelles vs doublons.
-    """
+    """Historique des fichiers XLSX importés."""
     id: Optional[int] = Field(default=None, primary_key=True)
 
-    imported_at:     datetime = Field(default_factory=datetime.utcnow)
-    filename:        str
-    total_rows:      int  # Nombre de lignes dans le fichier
-    new_rows:        int  # Sessions effectivement insérées
-    duplicate_rows:  int  # Sessions ignorées (record_id déjà en base)
+    imported_at:    datetime = Field(default_factory=datetime.utcnow)
+    filename:       str
+    total_rows:     int
+    new_rows:       int
+    duplicate_rows: int
 
 
 class TariffConfig(SQLModel, table=True):
     """
-    Configuration tarifaire EDF active.
-
-    Table singleton : un seul enregistrement avec id=1.
-    Mis à jour via PUT /api/config/tariff.
-
-    Les prix sont stockés en €/kWh (ex: 0.1724 pour 17,24 c€/kWh).
-    L'interface affiche et saisit en c€/kWh pour plus de lisibilité.
-
-    Note V2 : pour gérer les changements bi-annuels de tarifs EDF avec
-    application rétroactive correcte, il faudra migrer vers une table
-    TariffPeriod(date_from, date_to, price_hc, price_hp).
+    Tarif actif (singleton id=1) — conservé pour compatibilité ascendante.
+    En V2, la source de vérité est TariffPeriod.
+    Mis à jour automatiquement quand on ajoute/modifie une période.
     """
-    id: int = Field(default=1, primary_key=True)
-
-    price_hc:   float = Field(default=0.1724)  # €/kWh — Heures Creuses
-    price_hp:   float = Field(default=0.2305)  # €/kWh — Heures Pleines
+    id:         int      = Field(default=1, primary_key=True)
+    price_hc:   float    = Field(default=0.1724)
+    price_hp:   float    = Field(default=0.2305)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class TariffPeriod(SQLModel, table=True):
+    """
+    Période tarifaire EDF avec date d'entrée en vigueur.
+
+    Chaque enregistrement représente un tarif valable depuis `valid_from`
+    jusqu'à la date de la période suivante (ou aujourd'hui pour la dernière).
+
+    EDF révise les tarifs ~2 fois par an (février et août).
+    Le recalcul des coûts applique automatiquement le bon tarif
+    selon la date de début de chaque session.
+
+    Exemple :
+      id=1 : valid_from=2024-02-01, price_hc=0.1672, price_hp=0.2247
+      id=2 : valid_from=2024-08-01, price_hc=0.1724, price_hp=0.2305
+      → sessions avant 2024-08-01 utilisent les tarifs de id=1
+    """
+    id:         Optional[int] = Field(default=None, primary_key=True)
+    valid_from: date           # Date d'entrée en vigueur (incluse)
+    price_hc:   float          # €/kWh Heures Creuses
+    price_hp:   float          # €/kWh Heures Pleines
+    label:      str  = Field(default="")  # Libellé optionnel ex: "Révision février 2026"
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class AlertConfig(SQLModel, table=True):
+    """
+    Configuration des alertes de consommation mensuelle (singleton id=1).
+
+    Une alerte est déclenchée (webhook HTTP POST) quand la consommation
+    du mois en cours dépasse threshold_kwh ou threshold_eur.
+
+    Le webhook est générique : compatible ntfy, Slack, Discord, etc.
+    Pour ntfy : webhook_url = "https://ntfy.sh/mon-topic"
+    Pour Slack : webhook_url = "https://hooks.slack.com/services/..."
+
+    last_alert_month : dernier mois où une alerte a été envoyée (évite les doublons).
+    """
+    id:               int      = Field(default=1, primary_key=True)
+    enabled:          bool     = Field(default=False)
+    threshold_kwh:    float    = Field(default=0.0)   # 0 = désactivé
+    threshold_eur:    float    = Field(default=0.0)   # 0 = désactivé
+    webhook_url:      str      = Field(default="")    # URL webhook de notification
+    last_alert_month: str      = Field(default="")    # Format "YYYY-MM"
+    updated_at:       datetime = Field(default_factory=datetime.utcnow)
