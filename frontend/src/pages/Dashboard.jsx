@@ -86,7 +86,7 @@ const PieTooltip = ({ active, payload }) => {
   return (
     <Paper sx={{ p: 1.5, borderRadius: 2 }}>
       <Typography variant="body2" color={p.payload.fill} fontWeight={700}>{p.name}</Typography>
-      <Typography variant="body2">{p.value.toFixed(1)} kWh ({p.payload.percent}%)</Typography>
+      <Typography variant="body2">{p.value.toFixed(1)} kWh ({p.payload.pctLabel}%)</Typography>
     </Paper>
   )
 }
@@ -99,6 +99,7 @@ const renderCustomLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent
   return (
     <text x={x} y={y} fill="#fff" textAnchor="middle" dominantBaseline="central" fontSize={14} fontWeight={700}>
       {`${(percent * 100).toFixed(1)}%`}
+      {/* percent vient de Recharts (0→1), ne pas confondre avec pieData.pctLabel */}
     </text>
   )
 }
@@ -164,8 +165,8 @@ export default function Dashboard() {
   const hpPct = 100 - hcPct
 
   const pieData = [
-    { name: 'HC', value: totals.hc, fill: COLORS.hc, percent: hcPct.toFixed(1) },
-    { name: 'HP', value: totals.hp, fill: COLORS.hp, percent: hpPct.toFixed(1) },
+    { name: 'HC', value: totals.hc, fill: COLORS.hc, pctLabel: hcPct.toFixed(1) },
+    { name: 'HP', value: totals.hp, fill: COLORS.hp, pctLabel: hpPct.toFixed(1) },
   ]
 
   const xKey = view === 'monthly' ? 'month' : 'date'
@@ -251,7 +252,7 @@ export default function Dashboard() {
                     {pieData.map((entry) => (
                       <Box key={entry.name} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                         <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: entry.fill }} />
-                        <Typography variant="body2" color="text.secondary">{entry.name} — {entry.percent}%</Typography>
+                        <Typography variant="body2" color="text.secondary">{entry.name} — {entry.pctLabel}%</Typography>
                       </Box>
                     ))}
                   </Box>
