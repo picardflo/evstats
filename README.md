@@ -101,23 +101,6 @@ evstats/
 └── .gitignore
 ```
 
-### Gestion des versions
-
-La version est définie dans un **unique fichier `VERSION`** à la racine du repo.
-
-- Le **backend** le lit depuis le filesystem (monté en read-only via `docker-compose.yml`)
-  et l'expose via `GET /api/version`
-- Le **frontend** le récupère via cet endpoint et l'affiche dans le footer de la sidebar
-
-Pour incrémenter la version :
-```bash
-echo "1.3.0" > VERSION
-git add VERSION && git commit -m "chore: bump version 1.3.0"
-git push
-# Sur la VM :
-git pull && docker compose up -d --build
-```
-
 ### Stack
 
 | Couche | Technologie |
@@ -127,6 +110,38 @@ git pull && docker compose up -d --build
 | Frontend | React 18 · Vite · Material UI (dark theme) · Recharts |
 | Reverse proxy | Caddy (existant sur la VM) |
 | Conteneurs | Docker + Docker Compose |
+
+---
+
+## Gestion des versions
+
+La version de l'application est définie dans un **unique fichier `VERSION`** à la racine du repo. C'est la seule source de vérité — backend et frontend lisent la même valeur.
+
+```
+evstats/
+└── VERSION        # ex: 1.2.0
+```
+
+- Le **backend** lit ce fichier depuis le filesystem (monté en read-only via `docker-compose.yml`) et l'expose via `GET /api/version`.
+- Le **frontend** interroge cet endpoint au démarrage et affiche la version dans le footer de la sidebar (`EVSE Stats v1.2.0`).
+
+Aucune duplication de version dans `package.json`, `pyproject.toml` ou ailleurs.
+
+### Incrémenter la version
+
+```bash
+# 1. Mettre à jour le fichier
+echo "1.3.0" > VERSION
+
+# 2. Committer et pousser
+git add VERSION && git commit -m "chore: bump version 1.3.0"
+git push
+
+# 3. Déployer sur la VM
+git pull && docker compose up -d --build
+```
+
+Le frontend affiche automatiquement la nouvelle version après le redéploiement, sans aucun autre changement.
 
 ---
 
@@ -247,12 +262,11 @@ Le script conserve 30 jours de backups dans `/srv/docker_data/evstats/backups/`.
 - [x] Backup automatique SQLite
 - [x] Déploiement Docker + Caddy
 
-### V2 (envisagé)
-- [ ] Historique des tarifs avec périodes de validité (recalcul par tranche)
-- [ ] Graphique fréquence horaire des sessions
-- [ ] Authentification simple
-- [ ] Import multiple fichiers en une fois
-- [ ] Alertes consommation (seuil mensuel)
+### V2 (implémenté)
+- [x] Historique des tarifs avec périodes de validité (recalcul par tranche)
+- [x] Graphique fréquence horaire des sessions
+- [x] Alertes consommation (seuil mensuel kWh / €, webhook)
+- [x] Export rapport PDF mensuel
 
 ---
 
