@@ -298,6 +298,11 @@ export default function Dashboard() {
           {/* Coût + Économies */}
           <Paper sx={{ p: 3, borderRadius: 3, mb: 3 }}>
             <Typography variant="h6" fontWeight={600} gutterBottom>Coût réel vs économies réalisées (€)</Typography>
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+              <span style={{ color: COLORS.cost }}>■ Coût réel</span> = ce que tu as payé &nbsp;·&nbsp;
+              <span style={{ color: COLORS.savings }}>■ Économies</span> = gain vs 100% HP &nbsp;·&nbsp;
+              Total barre = ce qu'aurait coûté la même énergie sans contrat HC
+            </Typography>
             <ResponsiveContainer width="100%" height={240}>
               <BarChart data={data} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
