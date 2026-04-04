@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.db
+*.db-shm
+*.db-wal
+.venv/
+venv/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Docker
+caddy/data/
+caddy/config/
+
+# IDE
+.vscode/
+.idea/
+*.swp

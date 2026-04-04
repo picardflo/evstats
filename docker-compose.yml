@@ -1,0 +1,22 @@
+services:
+  evstats-api:
+    build: ./backend
+    container_name: evstats-api
+    restart: unless-stopped
+    volumes:
+      - /srv/docker_data/evstats:/app/data
+    networks:
+      - home.lan
+
+  evstats-frontend:
+    build: ./frontend
+    container_name: evstats-frontend
+    restart: unless-stopped
+    depends_on:
+      - evstats-api
+    networks:
+      - home.lan
+
+networks:
+  home.lan:
+    external: true

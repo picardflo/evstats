@@ -1,0 +1,6 @@
+# Bloc à ajouter dans le Caddyfile existant sur la VM Docker
+# (/srv/docker_data/caddy/Caddyfile ou équivalent)
+
+evstats.home.lan {
+    reverse_proxy evstats-frontend:80
+}
