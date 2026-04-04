@@ -97,7 +97,25 @@ evstats/
 ├── scripts/
 │   └── backup.sh              # Backup quotidien SQLite (cron)
 ├── docker-compose.yml
+├── VERSION                    # Version unique de l'application (ex: 1.2.0)
 └── .gitignore
+```
+
+### Gestion des versions
+
+La version est définie dans un **unique fichier `VERSION`** à la racine du repo.
+
+- Le **backend** le lit depuis le filesystem (monté en read-only via `docker-compose.yml`)
+  et l'expose via `GET /api/version`
+- Le **frontend** le récupère via cet endpoint et l'affiche dans le footer de la sidebar
+
+Pour incrémenter la version :
+```bash
+echo "1.3.0" > VERSION
+git add VERSION && git commit -m "chore: bump version 1.3.0"
+git push
+# Sur la VM :
+git pull && docker compose up -d --build
 ```
 
 ### Stack
