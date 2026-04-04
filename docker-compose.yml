@@ -5,6 +5,7 @@ services:
     restart: unless-stopped
     volumes:
       - /srv/docker_data/evstats:/app/data
+      - ./VERSION:/app/VERSION:ro
     networks:
       - home.lan
 

@@ -173,3 +173,10 @@ export async function checkAlerts() {
 export function buildPdfReportUrl(year, month) {
   return `/api/reports/monthly/${year}/${month}`
 }
+
+// ── Version ───────────────────────────────────────────────────────────────────
+
+export async function fetchVersion() {
+  const { data } = await api.get('/version')
+  return data.version
+}

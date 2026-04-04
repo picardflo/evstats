@@ -25,6 +25,7 @@ Endpoints disponibles :
 import csv
 import io
 import httpx
+from pathlib import Path
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import datetime, date
@@ -694,3 +695,13 @@ def list_imports(db: Session = Depends(get_session)):
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/api/version")
+def version():
+    """Retourne la version de l'application lue depuis le fichier VERSION à la racine du repo."""
+    version_file = Path(__file__).parent.parent.parent / "VERSION"
+    try:
+        return {"version": version_file.read_text().strip()}
+    except FileNotFoundError:
+        return {"version": "unknown"}

@@ -9,7 +9,7 @@
  *   2. Ajouter une entrée dans le tableau NAV
  *   3. Ajouter la Route dans App.jsx
  */
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
   Box, Drawer, AppBar, Toolbar, Typography, List, ListItem,
@@ -22,6 +22,7 @@ import SettingsIcon from '@mui/icons-material/Settings'
 import NotificationsIcon from '@mui/icons-material/Notifications'
 import MenuIcon from '@mui/icons-material/Menu'
 import BoltIcon from '@mui/icons-material/Bolt'
+import { fetchVersion } from '../api/client'
 
 const DRAWER_WIDTH = 220
 
@@ -39,6 +40,11 @@ export default function Layout({ children }) {
   const theme = useTheme()
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [version, setVersion] = useState(null)
+
+  useEffect(() => {
+    fetchVersion().then(setVersion).catch(() => {})
+  }, [])
 
   const drawer = (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -70,6 +76,16 @@ export default function Layout({ children }) {
           </ListItem>
         ))}
       </List>
+
+      {/* Footer version */}
+      <Box sx={{ p: 2, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+        <Typography variant="caption" color="text.secondary" display="block">
+          EVSE Stats {version ? `v${version}` : ''}
+        </Typography>
+        <Typography variant="caption" color="text.secondary" sx={{ opacity: 0.5 }}>
+          Morec / EVSEMaster
+        </Typography>
+      </Box>
     </Box>
   )
 
