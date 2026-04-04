@@ -700,7 +700,7 @@ def health():
 @app.get("/api/version")
 def version():
     """Retourne la version de l'application lue depuis le fichier VERSION à la racine du repo."""
-    version_file = Path(__file__).parent.parent.parent / "VERSION"
+    version_file = Path(__file__).parent.parent / "VERSION"
     try:
         return {"version": version_file.read_text().strip()}
     except FileNotFoundError:
