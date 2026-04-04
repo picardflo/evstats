@@ -62,14 +62,14 @@ async def lifespan(app: FastAPI):
             cfg = TariffConfig(id=1, price_hc=DEFAULT_PRICE_HC, price_hp=DEFAULT_PRICE_HP)
             db.add(cfg)
 
-        # TariffPeriod : seed avec le tarif par défaut si vide
+        # TariffPeriod : seed avec le tarif en vigueur au 16/03/2026 si vide
         periods = db.exec(select(TariffPeriod)).all()
         if not periods:
             db.add(TariffPeriod(
-                valid_from=date(2024, 1, 1),
+                valid_from=date(2026, 3, 16),
                 price_hc=cfg.price_hc,
                 price_hp=cfg.price_hp,
-                label="Tarif initial",
+                label="Révision mars 2026",
             ))
 
         # AlertConfig (singleton)
