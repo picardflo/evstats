@@ -1,3 +1,16 @@
+/**
+ * Page Sessions — tableau paginé des sessions de charge.
+ *
+ * Filtres disponibles :
+ *  - Statut de fin (Pull Plug / Fix Time / Power Down / Tous)
+ *  - Date début / Date fin (filtre sur start_time)
+ *
+ * Pagination : côté serveur (le backend ne retourne que la page demandée).
+ * Les filtres réinitialisent la page à 0 pour éviter les pages vides.
+ *
+ * Export CSV : le bouton génère un lien direct vers /api/sessions/export
+ * avec les mêmes filtres actifs — le navigateur déclenche le téléchargement.
+ */
 import React, { useState, useEffect, useCallback } from 'react'
 import {
   Box, Typography, Paper, Table, TableBody, TableCell, TableContainer,

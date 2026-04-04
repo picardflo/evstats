@@ -1,3 +1,14 @@
+/**
+ * Layout principal — sidebar de navigation + zone de contenu.
+ *
+ * Sur desktop : sidebar permanente (Drawer variant="permanent").
+ * Sur mobile  : AppBar avec burger menu + Drawer temporaire.
+ *
+ * Pour ajouter une page :
+ *   1. Importer l'icône MUI souhaitée
+ *   2. Ajouter une entrée dans le tableau NAV
+ *   3. Ajouter la Route dans App.jsx
+ */
 import React, { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {

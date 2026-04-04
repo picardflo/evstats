@@ -1,3 +1,18 @@
+/**
+ * Page Dashboard — vue synthétique des sessions de charge.
+ *
+ * Structure :
+ *  - Toggle de vue : 30 jours / Journalier / Mensuel
+ *  - KPI Cards : sessions, énergie, HC, HP, coût, économies
+ *    → tendances ↑↓ vs mois précédent (vue mensuelle uniquement)
+ *  - Camembert HC/HP + graphique barres empilées HC/HP
+ *  - Graphique coût réel + économies empilées
+ *  - Graphique durée de charge
+ *  - Tableau classement des mois (vue mensuelle uniquement)
+ *
+ * Données : fetchDailyStats() + fetchMonthlyStats() chargés une seule fois,
+ * le filtrage "30 jours" est fait côté client.
+ */
 import React, { useState, useEffect, useCallback } from 'react'
 import {
   Box, Typography, Grid, Paper, ToggleButtonGroup, ToggleButton,

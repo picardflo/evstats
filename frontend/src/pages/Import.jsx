@@ -1,3 +1,15 @@
+/**
+ * Page Import — import de fichiers .xlsx EVSEMaster.
+ *
+ * Fonctionnalités :
+ *  - Zone de drag & drop (événements onDragOver/onDragLeave/onDrop)
+ *  - Sélection via input file caché (déclenché par clic sur la zone ou le bouton)
+ *  - Feedback immédiat : loader pendant l'upload, résumé succès/erreur
+ *  - Historique des imports en bas de page (rechargé après chaque import)
+ *
+ * Le backend gère la déduplication : importer deux fois le même fichier
+ * ne crée pas de doublons.
+ */
 import React, { useState, useCallback, useEffect } from 'react'
 import {
   Box, Typography, Paper, Button, Alert, CircularProgress,

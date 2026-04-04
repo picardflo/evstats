@@ -1,3 +1,11 @@
+/**
+ * Point d'entrée de l'application React.
+ *
+ * Configure :
+ *  - BrowserRouter (navigation côté client, côté serveur nginx gère le fallback via try_files)
+ *  - ThemeProvider MUI avec un thème sombre personnalisé
+ *  - CssBaseline (reset CSS cohérent entre navigateurs)
+ */
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'

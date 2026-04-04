@@ -1,3 +1,20 @@
+/**
+ * Page Paramètres — configuration des tarifs EDF.
+ *
+ * Les tarifs EDF changent typiquement 2× par an (février et août).
+ * Cette page permet de les mettre à jour sans redéploiement.
+ *
+ * Workflow utilisateur :
+ *  1. Modifier HC et/ou HP (en c€/kWh, l'UI divise par 100 avant l'envoi)
+ *  2. "Enregistrer" → met à jour TariffConfig en base (prix futurs)
+ *  3. "Recalculer tous les coûts" → applique les nouveaux tarifs à
+ *     toutes les sessions existantes (coût €, pas la répartition HC/HP)
+ *
+ * Note V2 : le recalcul est global (pas de filtre par date).
+ * Pour un recalcul partiel (ex: appliquer le nouveau tarif seulement
+ * aux sessions après le 01/08), il faudra implémenter l'historique
+ * des périodes tarifaires.
+ */
 import React, { useState, useEffect } from 'react'
 import {
   Box, Typography, Paper, TextField, Button, Alert, CircularProgress,

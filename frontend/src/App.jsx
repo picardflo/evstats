@@ -1,3 +1,12 @@
+/**
+ * Racine de l'application — définit les routes React Router.
+ *
+ * Routes :
+ *   /dashboard → Dashboard (graphiques + KPIs)
+ *   /import    → Import XLSX
+ *   /sessions  → Tableau des sessions + export CSV
+ *   /settings  → Configuration des tarifs EDF
+ */
 import React from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'

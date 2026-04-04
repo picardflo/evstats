@@ -1,194 +1,252 @@
-# 📊 EVSE Stats WebUI (Morec / EVSEMaster)
+# EVSE Stats WebUI (Morec / EVSEMaster)
 
-## 🎯 Objectif
+Interface web de visualisation et d'analyse des sessions de charge issues de l'application **EVSEMaster**, via import de fichiers Excel (.xlsx).
 
-Développer une interface web (GUI) permettant de visualiser et analyser les données de charge issues de l’application **EVSEMaster**, via l’import de fichiers Excel (.xlsx).
-
-En l’absence d’API fournie par la borne Morec ou l’application EVSEMaster, cette solution repose exclusivement sur des exports manuels réguliers.
+En l'absence d'API fournie par la borne Morec ou l'application EVSEMaster, cette solution repose sur des exports manuels réguliers.
 
 ---
 
-## ⚙️ Fonctionnalités
+## Fonctionnalités
 
-### 📥 Import des données
-- Import manuel de fichiers **.xlsx**
-- Gestion des imports **différentiels** (déduplication des sessions)
-- Historisation des imports
+### Import des données
+- Import manuel de fichiers `.xlsx` (drag & drop ou sélection)
+- Déduplication automatique des sessions (basée sur `Numéro d'enregistrement`)
+- Historique des imports (date, fichier, nouvelles sessions, doublons)
 
-### 🔄 Traitement des données
+### Calcul tarifaire
+- Répartition HC / HP au niveau de la minute pour chaque session
+- Gestion des sessions chevauchant plusieurs plages tarifaires (ex : mardi 23h → mercredi 08h)
+- Tarifs EDF éditables via l'interface (sans redéploiement)
+- Recalcul des coûts sur toutes les sessions existantes en un clic
 
-Extraction des informations depuis l’export EVSEMaster :
+### Dashboard
+- **KPIs** : sessions, énergie, HC, HP, coût total, coût moyen/session, coût effectif c€/kWh, économies réalisées vs 100% HP
+- **Tendances** mois N vs mois N-1 (↑↓ avec %)
+- **Graphiques** : consommation HC/HP empilée, coût réel + économies, durée de charge
+- **Camembert** répartition HC/HP
+- **Vues** : 30 jours, journalière, mensuelle
+- **Classement des mois** avec % HC, coût moyen/session, économies
 
-- Numéro d'enregistrement
-- Numéro de chargeur
-- Date et heure de début de charge
-- Date et heure de fin de charge
-- Durée de charge (minutes)
-- Énergie consommée (kWh)
-- Utilisateur de début
-- Utilisateur de fin (utilisé comme statut / motif de fin)
+### Sessions
+- Tableau paginé avec filtres (statut de fin, plage de dates)
+- Export CSV des sessions filtrées
 
-> ⚠️ Note : l’export EVSEMaster ne fournit pas toujours un état explicite de la borne.  
-> Le champ `Utilisateur de fin` est utilisé comme **statut de fin de session** (ex : Pull Plug, Fix Time, Power Down).
-
----
-
-## 💡 Gestion du contrat EDF
-
-### 🕒 Option tarifaire
-**Heures Creuses + Week-end + Mercredi**
-
-### ⚡ Puissance
-12 kVA
-
-### 💰 Tarification (au 16/03/2026)
-
-| Type                     | Prix (c€/kWh) |
-|--------------------------|--------------|
-| HC semaine               | 17,24        |
-| HP semaine               | 23,05        |
-| HC week-end              | 17,24        |
-| HP week-end              | 17,24        |
-| HC mercredi              | 17,24        |
-| HP mercredi              | 17,24        |
-
-### ⏱️ Règles
-
-- HC semaine : **23h30 → 07h30** (hors mercredi)
-- Mercredi : **100% heures creuses**
-- Week-end : **100% heures creuses**
-
-### 🧮 Calculs attendus
-
-- Calcul du coût de chaque session de charge
-- Gestion des sessions chevauchant plusieurs plages tarifaires
-- Agrégation :
-  - par jour
-  - par mois
-- Répartition HP / HC
+### Paramètres
+- Édition des tarifs HC et HP (en c€/kWh)
+- Recalcul des coûts sur l'historique complet
+- Affichage des règles tarifaires en vigueur
 
 ---
 
-## 📈 Visualisations
+## Contrat EDF
 
-### Graphiques
+**Option tarifaire** : Heures Creuses + Week-end + Mercredi — 12 kVA
 
-- 🔋 Consommation (kWh)
-  - Vue journalière
-  - Vue mensuelle
+### Tarifs (au 16/03/2026)
 
-- ⏱️ Durée de charge (minutes)
-  - Vue journalière
-  - Vue mensuelle
+| Type | Prix (c€/kWh) |
+|---|---|
+| HC semaine | 17,24 |
+| HP semaine | 23,05 |
+| HC week-end | 17,24 |
+| HP week-end | 17,24 |
+| HC mercredi | 17,24 |
+| HP mercredi | 17,24 |
 
-- 💰 Coût (€)
-  - Vue journalière
-  - Vue mensuelle
+### Règles de classification HC/HP
 
-### Tableaux
+| Période | Règle |
+|---|---|
+| Mercredi | 100% Heures Creuses |
+| Samedi & Dimanche | 100% Heures Creuses |
+| Lun / Mar / Jeu / Ven | HC : 23h30 → 07h30 · HP : 07h30 → 23h30 |
 
-- 📊 Classement des mois les plus consommateurs
-- 📅 Historique des sessions
-- 🔍 Détail des sessions (filtrable)
-
----
-
-## 🏗️ Architecture technique
-
-### 🧱 Stack recommandée
-
-#### Backend
-- Python **FastAPI**
-- ORM : **SQLModel** ou **SQLAlchemy**
-- Parsing XLSX : **pandas** / **openpyxl**
-
-#### Frontend
-- **React (Vite)**
-- UI : **Material UI (MUI)**
-- Charts : **Recharts** ou **Chart.js**
-
-#### Base de données
-- **SQLite**
+> Les tarifs changent typiquement deux fois par an (février et août). Ils sont modifiables directement dans l'interface via **Paramètres → Tarifs EDF**, sans redéploiement.
 
 ---
 
-## 🗄️ Modèle de données (proposition)
+## Architecture technique
 
-### Table: `charging_sessions`
+```
+evstats/
+├── backend/                   # API Python FastAPI
+│   ├── app/
+│   │   ├── main.py            # Endpoints FastAPI
+│   │   ├── models.py          # Modèles SQLModel (ChargingSession, ImportLog, TariffConfig)
+│   │   ├── database.py        # Connexion SQLite
+│   │   ├── parser.py          # Parsing XLSX → ParsedSession
+│   │   └── tariff.py          # Calcul HC/HP (découpage minute-à-minute)
+│   ├── requirements.txt
+│   └── Dockerfile
+├── frontend/                  # UI React + Vite
+│   ├── src/
+│   │   ├── api/client.js      # Appels axios vers /api
+│   │   ├── components/
+│   │   │   └── Layout.jsx     # Sidebar + navigation
+│   │   └── pages/
+│   │       ├── Dashboard.jsx  # Graphiques + KPIs
+│   │       ├── Import.jsx     # Drag & drop xlsx
+│   │       ├── Sessions.jsx   # Tableau filtrable + export CSV
+│   │       └── Settings.jsx   # Configuration des tarifs
+│   ├── package.json
+│   ├── vite.config.js
+│   ├── nginx.conf
+│   └── Dockerfile
+├── caddy/
+│   └── Caddyfile              # Bloc à ajouter au Caddy existant
+├── scripts/
+│   └── backup.sh              # Backup quotidien SQLite (cron)
+├── docker-compose.yml
+└── .gitignore
+```
 
-| Champ              | Type        | Description |
-|-------------------|-------------|-------------|
-| id                | INTEGER PK  | Identifiant |
-| record_id         | TEXT        | Numéro d'enregistrement |
-| charger_id        | TEXT        | Numéro de chargeur |
-| start_time        | DATETIME    | Début charge |
-| end_time          | DATETIME    | Fin charge |
-| duration_minutes  | FLOAT       | Durée |
-| energy_kwh        | FLOAT       | Énergie |
-| cost_eur          | FLOAT       | Coût calculé |
-| tariff_split      | JSON        | Détail HP / HC |
-| end_status        | TEXT        | Statut fin (Pull Plug, etc.) |
-| import_hash       | TEXT        | Hash pour déduplication |
+### Stack
 
----
-
-## 🔌 Déploiement
-
-### 🐳 Environnement
-- Docker
-- Reverse proxy : **Caddy**
-- Domaine : `*.home.lan`
-
-### 🌐 URL cible
-https://evstats.home.lan/
-
----
-
-## 🚀 Roadmap
-
-### MVP
-- [ ] Import XLSX
-- [ ] Parsing EVSEMaster
-- [ ] Stockage SQLite
-- [ ] Calcul HP / HC simple
-- [ ] Dashboard basique
-
-### V1
-- [ ] Gestion complète des chevauchements horaires
-- [ ] Graphiques avancés
-- [ ] Historique détaillé
-
-### V2 (optionnel)
-- [ ] Authentification
-- [ ] Export CSV / PDF
-- [ ] Alertes consommation
-- [ ] Automatisation import
+| Couche | Technologie |
+|---|---|
+| Backend | Python 3.12 · FastAPI · SQLModel · pandas · openpyxl |
+| Base de données | SQLite |
+| Frontend | React 18 · Vite · Material UI (dark theme) · Recharts |
+| Reverse proxy | Caddy (existant sur la VM) |
+| Conteneurs | Docker + Docker Compose |
 
 ---
 
-## ⚠️ Contraintes
+## Modèle de données
 
-- Pas d’API côté borne Morec
-- Pas d’API EVSEMaster
-- Dépendance aux exports manuels XLSX
-- Format de données potentiellement variable
+### `charging_sessions`
+
+| Champ | Type | Description |
+|---|---|---|
+| id | INTEGER PK | Identifiant interne |
+| record_id | TEXT UNIQUE | Numéro d'enregistrement EVSEMaster (clé de déduplication) |
+| charger_id | TEXT | Numéro de chargeur |
+| start_time | DATETIME | Début de session |
+| end_time | DATETIME | Fin de session |
+| duration_minutes | FLOAT | Durée (fournie par EVSEMaster) |
+| energy_kwh | FLOAT | Énergie consommée |
+| hc_kwh | FLOAT | Part HC (calculée) |
+| hp_kwh | FLOAT | Part HP (calculée) |
+| cost_eur | FLOAT | Coût calculé (hc_kwh × prix_HC + hp_kwh × prix_HP) |
+| end_status | TEXT | Motif de fin : Pull Plug, Fix Time, Power Down, ou hash RFID |
+| start_user | TEXT | Initiateur : Clock ou hash RFID |
+
+### `import_log`
+
+Historique des imports : fichier, date, nombre de nouvelles sessions et doublons.
+
+### `tariff_config`
+
+Un seul enregistrement (id=1) contenant les prix HC et HP actifs, mis à jour via l'interface.
 
 ---
 
-## 🎨 UX / UI
+## API REST
 
-- Design moderne inspiré **Material Design**
-- Dashboard clair et lisible
-- Responsive (desktop + mobile)
+| Méthode | Endpoint | Description |
+|---|---|---|
+| POST | `/api/import` | Import d'un fichier .xlsx |
+| GET | `/api/sessions` | Liste paginée + filtres (end_status, start_date, end_date) |
+| GET | `/api/sessions/export` | Export CSV (mêmes filtres) |
+| GET | `/api/stats/daily` | Agrégats journaliers |
+| GET | `/api/stats/monthly` | Agrégats mensuels |
+| GET | `/api/imports` | Historique des imports |
+| GET | `/api/config/tariff` | Tarifs actuels |
+| PUT | `/api/config/tariff` | Mise à jour des tarifs |
+| POST | `/api/config/tariff/recalculate` | Recalcul des coûts sur tout l'historique |
+| GET | `/api/health` | Health check |
 
 ---
 
-## 📌 Notes
+## Déploiement
 
-Ce projet vise à combler l’absence d’outils avancés de monitoring pour les bornes Morec en proposant une solution autonome, légère et extensible.
+### Prérequis VM
+
+- Docker + Docker Compose
+- Caddy existant connecté au réseau Docker `home.lan`
+- Accès internet depuis Docker (pour le build npm)
+
+### Installation
+
+```bash
+# 1. Créer le dossier de données
+mkdir -p /srv/docker_data/evstats
+
+# 2. Cloner le repo
+cd /srv/docker_data
+git clone git@gogs.home.lan:fpicard/evstats.git
+
+# 3. Build et démarrage
+cd evstats
+docker compose up -d --build
+```
+
+### Ajouter le bloc dans le Caddyfile existant
+
+```caddy
+evstats.home.lan {
+    reverse_proxy evstats-frontend:80
+}
+```
+
+```bash
+docker exec caddy caddy reload --config /etc/caddy/Caddyfile
+```
+
+### Mise à jour
+
+```bash
+cd /srv/docker_data/evstats
+git pull
+docker compose up -d --build
+```
+
+### Backup SQLite (cron)
+
+```bash
+# Ajouter dans crontab (crontab -e)
+0 3 * * * /srv/docker_data/evstats/scripts/backup.sh
+```
+
+Le script conserve 30 jours de backups dans `/srv/docker_data/evstats/backups/`.
 
 ---
 
-## 👨‍💻 Auteur
+## Roadmap
 
-Florian Marchand
+### Fait (MVP + V1)
+- [x] Import XLSX avec déduplication
+- [x] Parsing EVSEMaster
+- [x] Stockage SQLite
+- [x] Calcul HC/HP avec gestion des chevauchements
+- [x] Dashboard (KPIs, graphiques, classement)
+- [x] Tarifs EDF configurables via UI + recalcul
+- [x] Économies vs 100% HP
+- [x] Tendances mois N-1
+- [x] Vue 30 jours
+- [x] Tableau sessions paginé + filtrable
+- [x] Export CSV
+- [x] Backup automatique SQLite
+- [x] Déploiement Docker + Caddy
+
+### V2 (envisagé)
+- [ ] Historique des tarifs avec périodes de validité (recalcul par tranche)
+- [ ] Graphique fréquence horaire des sessions
+- [ ] Authentification simple
+- [ ] Import multiple fichiers en une fois
+- [ ] Alertes consommation (seuil mensuel)
+
+---
+
+## Contraintes connues
+
+- Pas d'API côté borne Morec ni EVSEMaster → dépendance aux exports manuels
+- Format de colonnes potentiellement variable selon la version EVSEMaster
+- Un seul chargeur dans les données actuelles (`Numéro de chargeur` unique)
+- Le tarif est appliqué globalement (pas d'historique par période) — V2
+
+---
+
+## Auteur
+
+Florian PICARD
