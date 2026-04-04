@@ -112,7 +112,7 @@ export default function Settings() {
 
       {/* Tarif actif */}
       {config && (
-        <Paper sx={{ p: 2.5, borderRadius: 3, mb: 3, maxWidth: 500 }}>
+        <Paper sx={{ p: 2.5, borderRadius: 3, mb: 3, maxWidth: { sm: 500 } }}>
           <Typography variant="h6" fontWeight={600} gutterBottom>Tarif actif</Typography>
           <Box sx={{ display: 'flex', gap: 3 }}>
             <Box>
@@ -148,8 +148,8 @@ export default function Settings() {
           </Button>
         </Box>
 
-        <TableContainer>
-          <Table size="small">
+        <TableContainer sx={{ overflowX: 'auto' }}>
+          <Table size="small" sx={{ minWidth: 420 }}>
             <TableHead>
               <TableRow>
                 <TableCell>En vigueur depuis</TableCell>
@@ -199,7 +199,7 @@ export default function Settings() {
       </Paper>
 
       {/* Règles tarifaires */}
-      <Paper sx={{ p: 3, borderRadius: 3, maxWidth: 500 }}>
+      <Paper sx={{ p: 3, borderRadius: 3, maxWidth: { sm: 500 } }}>
         <Typography variant="h6" fontWeight={600} gutterBottom>Règles HC/HP (non modifiables)</Typography>
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
           <Chip label="Mercredi → 100% HC"           color="info"    size="small" />

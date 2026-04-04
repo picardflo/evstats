@@ -101,7 +101,7 @@ export default function Sessions() {
               ))}
             </TextField>
           </Grid>
-          <Grid item xs={6} sm={4} md={3}>
+          <Grid item xs={12} sm={4} md={3}>
             <TextField
               fullWidth size="small" label="Date début" type="date"
               InputLabelProps={{ shrink: true }}
@@ -109,7 +109,7 @@ export default function Sessions() {
               onChange={(e) => setStartDate(e.target.value)}
             />
           </Grid>
-          <Grid item xs={6} sm={4} md={3}>
+          <Grid item xs={12} sm={4} md={3}>
             <TextField
               fullWidth size="small" label="Date fin" type="date"
               InputLabelProps={{ shrink: true }}
@@ -123,8 +123,8 @@ export default function Sessions() {
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
       <Paper sx={{ borderRadius: 3 }}>
-        <TableContainer>
-          <Table size="small">
+        <TableContainer sx={{ overflowX: 'auto' }}>
+          <Table size="small" sx={{ minWidth: 600 }}>
             <TableHead>
               <TableRow>
                 <TableCell>Début</TableCell>

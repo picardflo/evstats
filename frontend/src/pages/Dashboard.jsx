@@ -252,13 +252,15 @@ export default function Dashboard() {
             <Grid item xs={12} md={4}>
               <Paper sx={{ p: 3, borderRadius: 3, height: '100%', display: 'flex', flexDirection: 'column' }}>
                 <Typography variant="h6" fontWeight={600} gutterBottom>Répartition HC / HP</Typography>
-                <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                  <PieChart width={220} height={220}>
-                    <Pie data={pieData} cx={110} cy={110} outerRadius={95} dataKey="value" labelLine={false} label={renderCustomLabel}>
-                      {pieData.map((entry) => <Cell key={entry.name} fill={entry.fill} />)}
-                    </Pie>
-                    <Tooltip content={<PieTooltip />} />
-                  </PieChart>
+                <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <PieChart>
+                      <Pie data={pieData} cx="50%" cy="50%" outerRadius={95} dataKey="value" labelLine={false} label={renderCustomLabel}>
+                        {pieData.map((entry) => <Cell key={entry.name} fill={entry.fill} />)}
+                      </Pie>
+                      <Tooltip content={<PieTooltip />} />
+                    </PieChart>
+                  </ResponsiveContainer>
                   <Box sx={{ display: 'flex', gap: 3, mt: 1 }}>
                     {pieData.map((entry) => (
                       <Box key={entry.name} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
@@ -280,7 +282,7 @@ export default function Dashboard() {
             <Grid item xs={12} md={8}>
               <Paper sx={{ p: 3, borderRadius: 3 }}>
                 <Typography variant="h6" fontWeight={600} gutterBottom>Consommation HC / HP (kWh)</Typography>
-                <ResponsiveContainer width="100%" height={260}>
+                <ResponsiveContainer width="100%" height={220}>
                   <BarChart data={data} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                     <XAxis dataKey={xKey} tickFormatter={formatXAxis} tick={{ fontSize: 11 }} />
@@ -381,8 +383,8 @@ export default function Dashboard() {
               <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
                 Cliquez sur l'icône PDF pour télécharger le rapport du mois.
               </Typography>
-              <TableContainer>
-                <Table size="small">
+              <TableContainer sx={{ overflowX: 'auto' }}>
+                <Table size="small" sx={{ minWidth: 700 }}>
                   <TableHead>
                     <TableRow>
                       <TableCell>#</TableCell>

@@ -80,7 +80,7 @@ export default function Import() {
           border: '2px dashed',
           borderColor: dragging ? 'primary.main' : 'rgba(255,255,255,0.2)',
           borderRadius: 3,
-          p: 6,
+          p: { xs: 3, sm: 6 },
           textAlign: 'center',
           cursor: 'pointer',
           transition: 'border-color 0.2s',
@@ -90,7 +90,7 @@ export default function Import() {
         onClick={() => document.getElementById('file-input').click()}
       >
         <input id="file-input" type="file" accept=".xlsx" hidden onChange={onFileInput} />
-        <UploadFileIcon sx={{ fontSize: 56, color: 'primary.main', mb: 2 }} />
+        <UploadFileIcon sx={{ fontSize: { xs: 40, sm: 56 }, color: 'primary.main', mb: 2 }} />
         <Typography variant="h6" gutterBottom>
           Glissez votre fichier .xlsx ici
         </Typography>
@@ -126,8 +126,8 @@ export default function Import() {
           <Typography variant="h6" fontWeight={600} gutterBottom>
             Historique des imports
           </Typography>
-          <TableContainer component={Paper}>
-            <Table size="small">
+          <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
+            <Table size="small" sx={{ minWidth: 400 }}>
               <TableHead>
                 <TableRow>
                   <TableCell>Fichier</TableCell>

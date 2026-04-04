@@ -101,7 +101,7 @@ export default function Alerts() {
         />
 
         <Grid container spacing={2}>
-          <Grid item xs={6}>
+          <Grid item xs={12} sm={6}>
             <TextField
               fullWidth size="small" label="Seuil kWh / mois" type="number"
               value={threshKwh} onChange={(e) => setThreshKwh(e.target.value)}
@@ -109,7 +109,7 @@ export default function Alerts() {
               inputProps={{ min: 0, step: 10 }}
             />
           </Grid>
-          <Grid item xs={6}>
+          <Grid item xs={12} sm={6}>
             <TextField
               fullWidth size="small" label="Seuil € / mois" type="number"
               value={threshEur} onChange={(e) => setThreshEur(e.target.value)}
