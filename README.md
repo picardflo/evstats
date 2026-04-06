@@ -28,6 +28,25 @@ Since Morec / EVSEMaster provides no API, the workflow relies on manual `.xlsx` 
 - Hourly frequency chart
 - CSV export, SQLite backup script
 
+### Screenshots
+
+**Dashboard — KPIs, graphiques HC/HP, coût réel vs économies**
+![Dashboard](https://github.com/user-attachments/assets/7c4b488c-0cb1-404c-8663-716860473eb4)
+
+**Récapitulatif annuel + classement des mois**
+![Classement des mois](https://github.com/user-attachments/assets/f6bdceac-a073-4d81-b336-f4bfe2f56654)
+
+**Sessions de charge — tableau paginé + filtres**
+![Sessions](https://github.com/user-attachments/assets/44c1a770-6fe3-4de6-9c6e-3d5bcb6234ef)
+
+**Véhicule — specs, photo, KPIs au kilomètre**
+![Véhicule](https://github.com/user-attachments/assets/e1a417f5-016b-4f38-8e9c-d0efc545a4d3)
+
+**Paramètres — historique des tarifs EDF**
+![Paramètres](https://github.com/user-attachments/assets/ca3ce7c7-4d8e-49dd-ac01-61805cf05b9c)
+
+---
+
 ### Quick start
 
 ```bash
