@@ -33,8 +33,8 @@ Since Morec / EVSEMaster provides no API, the workflow relies on manual `.xlsx` 
 **Dashboard — KPIs, graphiques HC/HP, coût réel vs économies**
 ![Dashboard](https://github.com/user-attachments/assets/7c4b488c-0cb1-404c-8663-716860473eb4)
 
-**Récapitulatif annuel + classement des mois**
-![Classement des mois](https://github.com/user-attachments/assets/f6bdceac-a073-4d81-b336-f4bfe2f56654)
+**Import XLSX — drag & drop, historique des imports**
+![Import](https://github.com/user-attachments/assets/f6bdceac-a073-4d81-b336-f4bfe2f56654)
 
 **Sessions de charge — tableau paginé + filtres**
 ![Sessions](https://github.com/user-attachments/assets/44c1a770-6fe3-4de6-9c6e-3d5bcb6234ef)
