@@ -21,4 +21,7 @@ docker-compose.override.yml
 .vscode/
 .idea/
 *.swp
+
+# Claude Code
+.claude/
 *.xlsx
