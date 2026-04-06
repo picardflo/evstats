@@ -27,6 +27,7 @@ import {
   CartesianGrid, Legend, PieChart, Pie, Cell,
 } from 'recharts'
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf'
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import { fetchDailyStats, fetchMonthlyStats, fetchHourlyStats, checkAlerts, buildPdfReportUrl } from '../api/client'
 
 // Plages HC/HP pour le fond du graphique horaire (lun-ven hors mer)
@@ -105,6 +106,16 @@ const renderCustomLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent
       {`${(percent * 100).toFixed(1)}%`}
       {/* percent vient de Recharts (0→1), ne pas confondre avec pieData.pctLabel */}
     </text>
+  )
+}
+
+function InfoTooltip({ text }) {
+  return (
+    <MuiTooltip title={text} arrow placement="top">
+      <IconButton size="small" sx={{ ml: 0.5, color: 'text.secondary', p: 0.3, verticalAlign: 'middle' }}>
+        <InfoOutlinedIcon sx={{ fontSize: 16 }} />
+      </IconButton>
+    </MuiTooltip>
   )
 }
 
@@ -322,12 +333,10 @@ export default function Dashboard() {
 
           {/* Coût + Économies */}
           <Paper sx={{ p: 3, borderRadius: 3, mb: 3 }}>
-            <Typography variant="h6" fontWeight={600} gutterBottom>Coût réel vs économies réalisées (€)</Typography>
-            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-              <span style={{ color: COLORS.cost }}>■ Coût réel</span> = ce que tu as payé &nbsp;·&nbsp;
-              <span style={{ color: COLORS.savings }}>■ Économies</span> = gain vs 100% HP &nbsp;·&nbsp;
-              Total barre = ce qu'aurait coûté la même énergie sans contrat HC
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+              <Typography variant="h6" fontWeight={600}>Coût réel vs économies réalisées (€)</Typography>
+              <InfoTooltip text="Coût réel = ce que tu as payé · Économies = gain vs 100% HP · Total de la barre = ce qu'aurait coûté la même énergie sans contrat HC (100% HP)" />
+            </Box>
             <ResponsiveContainer width="100%" height={240}>
               <BarChart data={data} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
@@ -358,13 +367,10 @@ export default function Dashboard() {
           {/* Graphique fréquence horaire */}
           {hourly.length > 0 && (
             <Paper sx={{ p: 3, borderRadius: 3, mb: 3 }}>
-              <Typography variant="h6" fontWeight={600} gutterBottom>
-                Fréquence des charges par heure de début
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Les heures en bleu clair sont des Heures Creuses (approximation lun-ven).
-                Mercredi et week-end sont 100% HC.
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                <Typography variant="h6" fontWeight={600}>Fréquence des charges par heure de début</Typography>
+                <InfoTooltip text="Les barres bleues correspondent aux Heures Creuses (approximation lun-ven hors mer, 23h30→07h30). Mercredi et week-end sont 100% HC. Les barres oranges sont des Heures Pleines." />
+              </Box>
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={hourly} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
