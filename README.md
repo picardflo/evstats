@@ -375,6 +375,12 @@ Le script conserve 30 jours de backups dans `/srv/docker_data/evstats/backups/`.
 ### v1.4.1
 - [x] Légendes des graphiques remplacées par un bouton ⓘ avec tooltip au survol
 
+### v1.4.2
+- [x] Véhicule actif : un seul véhicule "par défaut" à la fois (modèle imprimante par défaut)
+- [x] KPIs au km affichés uniquement pour le véhicule actif
+- [x] Chip "Actif" (vert) + contour sur la carte active, chip cliquable "Définir comme actif" sur les autres
+- [x] Premier véhicule créé automatiquement actif
+
 ### À venir
 - [ ] Support du tarif Tempo EDF (Bleu/Blanc/Rouge) — nécessite intégration API RTE pour le calendrier des couleurs de jours
 - [ ] Support multi-chargeurs

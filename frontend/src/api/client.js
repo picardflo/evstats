@@ -215,6 +215,11 @@ export async function deleteVehicle(id) {
   await api.delete(`/vehicles/${id}`)
 }
 
+export async function setActiveVehicle(id) {
+  const { data } = await api.post(`/vehicles/${id}/set-active`)
+  return data
+}
+
 export async function uploadVehicleImage(id, file) {
   const form = new FormData()
   form.append('file', file)

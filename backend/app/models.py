@@ -133,6 +133,7 @@ class Vehicle(SQLModel, table=True):
     battery_kwh:           float                       # Capacité nette en kWh
     consumption_wh_per_km: float                       # Conso réelle en Wh/km
     image_filename:        str  = Field(default="")    # Nom de fichier image
+    is_active:             bool = Field(default=False) # Un seul véhicule actif à la fois
     created_at:            datetime = Field(default_factory=datetime.utcnow)
 
 

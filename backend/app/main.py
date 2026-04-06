@@ -25,6 +25,7 @@ Endpoints disponibles :
   POST   /api/vehicles                        Crée un véhicule (V2)
   PUT    /api/vehicles/{id}                   Met à jour un véhicule (V2)
   DELETE /api/vehicles/{id}                   Supprime un véhicule (V2)
+  POST   /api/vehicles/{id}/set-active        Définit le véhicule actif (V2)
   POST   /api/vehicles/{id}/image             Upload image d'un véhicule (V2)
   GET    /api/vehicles/{id}/image             Sert l'image d'un véhicule (V2)
   GET    /api/health                          Health check
@@ -808,6 +809,7 @@ class VehicleOut(BaseModel):
     battery_kwh: float
     consumption_wh_per_km: float
     image_filename: str
+    is_active: bool
     created_at: datetime
 
     class Config:
@@ -828,8 +830,29 @@ def list_vehicles(db: Session = Depends(get_session)):
 
 @app.post("/api/vehicles", response_model=VehicleOut)
 def create_vehicle(body: VehicleIn, db: Session = Depends(get_session)):
-    v = Vehicle(**body.model_dump())
+    # Premier véhicule créé → automatiquement actif
+    existing = db.exec(select(Vehicle)).all()
+    v = Vehicle(**body.model_dump(), is_active=len(existing) == 0)
     db.add(v)
+    db.commit()
+    db.refresh(v)
+    return v
+
+
+@app.post("/api/vehicles/{vehicle_id}/set-active", response_model=VehicleOut)
+def set_active_vehicle(vehicle_id: int, db: Session = Depends(get_session)):
+    """
+    Définit un véhicule comme actif et désactive tous les autres.
+    Un seul véhicule actif à la fois (modèle "imprimante par défaut").
+    """
+    v = db.get(Vehicle, vehicle_id)
+    if not v:
+        raise HTTPException(status_code=404, detail="Véhicule introuvable")
+    # Désactive tous les véhicules
+    for other in db.exec(select(Vehicle)).all():
+        other.is_active = False
+    # Active celui-ci
+    v.is_active = True
     db.commit()
     db.refresh(v)
     return v

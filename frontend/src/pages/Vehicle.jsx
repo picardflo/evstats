@@ -20,9 +20,11 @@ import AddIcon from '@mui/icons-material/Add'
 import EditIcon from '@mui/icons-material/Edit'
 import DeleteIcon from '@mui/icons-material/Delete'
 import PhotoCameraIcon from '@mui/icons-material/PhotoCamera'
+import StarIcon from '@mui/icons-material/Star'
+import StarBorderIcon from '@mui/icons-material/StarBorder'
 import {
   fetchVehicles, createVehicle, updateVehicle, deleteVehicle,
-  uploadVehicleImage, vehicleImageUrl,
+  uploadVehicleImage, vehicleImageUrl, setActiveVehicle,
 } from '../api/client'
 import { fetchMonthlyStats } from '../api/client'
 
@@ -140,6 +142,16 @@ export default function Vehicle() {
     }
   }
 
+  const handleSetActive = async (id) => {
+    setSuccess(null); setError(null)
+    try {
+      await setActiveVehicle(id)
+      load()
+    } catch {
+      setError('Erreur lors du changement de véhicule actif')
+    }
+  }
+
   const handleDelete = async (id) => {
     setSuccess(null); setError(null)
     try {
@@ -203,7 +215,10 @@ export default function Vehicle() {
           return (
             <Box key={v.id} sx={{ mb: 4 }}>
               {/* Carte véhicule */}
-              <Paper sx={{ p: 3, borderRadius: 3, mb: 3 }}>
+              <Paper sx={{
+                p: 3, borderRadius: 3, mb: v.is_active ? 3 : 0,
+                outline: v.is_active ? '2px solid #06d6a0' : 'none',
+              }}>
                 <Grid container spacing={3} alignItems="center">
                   {/* Photo */}
                   <Grid item xs={12} sm="auto">
@@ -252,7 +267,21 @@ export default function Vehicle() {
                   <Grid item xs={12} sm>
                     <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
                       <Box>
-                        <Typography variant="h5" fontWeight={700}>{v.name}</Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                          <Typography variant="h5" fontWeight={700}>{v.name}</Typography>
+                          {v.is_active
+                            ? <Chip label="Actif" size="small" color="success" icon={<StarIcon sx={{ fontSize: '14px !important' }} />} />
+                            : <Chip
+                                label="Définir comme actif"
+                                size="small"
+                                variant="outlined"
+                                icon={<StarBorderIcon sx={{ fontSize: '14px !important' }} />}
+                                onClick={() => handleSetActive(v.id)}
+                                sx={{ cursor: 'pointer', borderColor: 'text.disabled', color: 'text.secondary',
+                                  '&:hover': { borderColor: '#06d6a0', color: '#06d6a0' } }}
+                              />
+                          }
+                        </Box>
                         {v.year && (
                           <Chip label={v.year} size="small" sx={{ mt: 0.5 }} />
                         )}
@@ -286,45 +315,47 @@ export default function Vehicle() {
                 </Grid>
               </Paper>
 
-              {/* KPIs au kilomètre */}
-              <Grid container spacing={2}>
-                <Grid item xs={6} sm={3}>
-                  <KpiCard
-                    label="Km rechargés"
-                    value={Math.round(km).toLocaleString('fr-FR')}
-                    unit="km"
-                    color="text.primary"
-                    sub={`sur ${totals.sessions} sessions`}
-                  />
+              {/* KPIs au kilomètre — uniquement pour le véhicule actif */}
+              {v.is_active && (
+                <Grid container spacing={2}>
+                  <Grid item xs={6} sm={3}>
+                    <KpiCard
+                      label="Km rechargés"
+                      value={Math.round(km).toLocaleString('fr-FR')}
+                      unit="km"
+                      color="text.primary"
+                      sub={`sur ${totals.sessions} sessions`}
+                    />
+                  </Grid>
+                  <Grid item xs={6} sm={3}>
+                    <KpiCard
+                      label="Coût / 100 km"
+                      value={costPer100.toFixed(2)}
+                      unit="€"
+                      color={COLORS.cost}
+                      sub={`total : ${totals.cost_eur.toFixed(2)} €`}
+                    />
+                  </Grid>
+                  <Grid item xs={6} sm={3}>
+                    <KpiCard
+                      label="Économies / 100 km"
+                      value={savingsPer100.toFixed(2)}
+                      unit="€"
+                      color={COLORS.savings}
+                      sub="vs 100% HP"
+                    />
+                  </Grid>
+                  <Grid item xs={6} sm={3}>
+                    <KpiCard
+                      label="Pleins équivalents"
+                      value={fullCharges.toFixed(1)}
+                      unit=""
+                      color={COLORS.hc}
+                      sub={`batterie de ${v.battery_kwh} kWh`}
+                    />
+                  </Grid>
                 </Grid>
-                <Grid item xs={6} sm={3}>
-                  <KpiCard
-                    label="Coût / 100 km"
-                    value={costPer100.toFixed(2)}
-                    unit="€"
-                    color={COLORS.cost}
-                    sub={`total : ${totals.cost_eur.toFixed(2)} €`}
-                  />
-                </Grid>
-                <Grid item xs={6} sm={3}>
-                  <KpiCard
-                    label="Économies / 100 km"
-                    value={savingsPer100.toFixed(2)}
-                    unit="€"
-                    color={COLORS.savings}
-                    sub="vs 100% HP"
-                  />
-                </Grid>
-                <Grid item xs={6} sm={3}>
-                  <KpiCard
-                    label="Pleins équivalents"
-                    value={fullCharges.toFixed(1)}
-                    unit=""
-                    color={COLORS.hc}
-                    sub={`batterie de ${v.battery_kwh} kWh`}
-                  />
-                </Grid>
-              </Grid>
+              )}
             </Box>
           )
         })
