@@ -13,11 +13,11 @@
  * Données : fetchDailyStats() + fetchMonthlyStats() chargés une seule fois,
  * le filtrage "30 jours" est fait côté client.
  */
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Box, Typography, Grid, Paper, ToggleButtonGroup, ToggleButton,
   CircularProgress, Alert, Table, TableBody, TableCell, TableContainer,
-  TableHead, TableRow, Tooltip as MuiTooltip, IconButton,
+  TableHead, TableRow, Tooltip as MuiTooltip, IconButton, MenuItem, TextField,
 } from '@mui/material'
 import TrendingUpIcon from '@mui/icons-material/TrendingUp'
 import TrendingDownIcon from '@mui/icons-material/TrendingDown'
@@ -27,7 +27,6 @@ import {
   CartesianGrid, Legend, PieChart, Pie, Cell,
 } from 'recharts'
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf'
-import DownloadIcon from '@mui/icons-material/Download'
 import { fetchDailyStats, fetchMonthlyStats, fetchHourlyStats, checkAlerts, buildPdfReportUrl } from '../api/client'
 
 // Plages HC/HP pour le fond du graphique horaire (lun-ven hors mer)
@@ -123,6 +122,7 @@ export default function Dashboard() {
   const [hourly, setHourly] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [yearFilter, setYearFilter] = useState('all')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -179,6 +179,29 @@ export default function Dashboard() {
     { name: 'HC', value: totals.hc, fill: COLORS.hc, pctLabel: hcPct.toFixed(1) },
     { name: 'HP', value: totals.hp, fill: COLORS.hp, pctLabel: hpPct.toFixed(1) },
   ]
+
+  // Agrégation par année (toujours calculé sur toutes les données mensuelles)
+  const yearlyStats = useMemo(() => {
+    const map = {}
+    allMonthly.forEach((row) => {
+      const y = row.month.split('-')[0]
+      if (!map[y]) map[y] = { year: y, sessions: 0, energy_kwh: 0, hc_kwh: 0, hp_kwh: 0, cost_eur: 0, savings_eur: 0 }
+      map[y].sessions    += row.sessions
+      map[y].energy_kwh  += row.energy_kwh
+      map[y].hc_kwh      += row.hc_kwh
+      map[y].hp_kwh      += row.hp_kwh
+      map[y].cost_eur    += row.cost_eur
+      map[y].savings_eur += (row.savings_eur || 0)
+    })
+    return Object.values(map).sort((a, b) => b.year - a.year)
+  }, [allMonthly])
+
+  const years = yearlyStats.map((y) => y.year)
+
+  // Mois filtrés par l'année sélectionnée
+  const filteredMonthly = useMemo(() =>
+    yearFilter === 'all' ? allMonthly : allMonthly.filter((r) => r.month.startsWith(yearFilter)),
+  [allMonthly, yearFilter])
 
   const xKey = view === 'monthly' ? 'month' : 'date'
 
@@ -376,13 +399,61 @@ export default function Dashboard() {
             </Paper>
           )}
 
-          {/* Classement mois */}
+          {/* Récapitulatif annuel */}
+          {view === 'monthly' && (
+            <Paper sx={{ p: 3, borderRadius: 3, mb: 3 }}>
+              <Typography variant="h6" fontWeight={600} gutterBottom>Récapitulatif annuel</Typography>
+              <TableContainer sx={{ overflowX: 'auto' }}>
+                <Table size="small" sx={{ minWidth: 480 }}>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Année</TableCell>
+                      <TableCell align="right">Sessions</TableCell>
+                      <TableCell align="right">Énergie (kWh)</TableCell>
+                      <TableCell align="right">% HC</TableCell>
+                      <TableCell align="right">Coût (€)</TableCell>
+                      <TableCell align="right">Économies (€)</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {yearlyStats.map((y) => {
+                      const pct = y.energy_kwh > 0 ? (y.hc_kwh / y.energy_kwh * 100).toFixed(1) : '0.0'
+                      return (
+                        <TableRow key={y.year} hover>
+                          <TableCell sx={{ fontWeight: 700 }}>{y.year}</TableCell>
+                          <TableCell align="right">{y.sessions}</TableCell>
+                          <TableCell align="right">{y.energy_kwh.toFixed(2)}</TableCell>
+                          <TableCell align="right" sx={{ color: COLORS.hc }}>{pct}%</TableCell>
+                          <TableCell align="right" sx={{ color: COLORS.cost, fontWeight: 600 }}>{y.cost_eur.toFixed(2)}</TableCell>
+                          <TableCell align="right" sx={{ color: COLORS.savings }}>{y.savings_eur.toFixed(2)}</TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Paper>
+          )}
+
+          {/* Classement des mois */}
           {view === 'monthly' && (
             <Paper sx={{ p: 3, borderRadius: 3 }}>
-              <Typography variant="h6" fontWeight={600} gutterBottom>Classement des mois</Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                Cliquez sur l'icône PDF pour télécharger le rapport du mois.
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1, flexWrap: 'wrap', gap: 1 }}>
+                <Box>
+                  <Typography variant="h6" fontWeight={600}>Classement des mois</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Cliquez sur l'icône PDF pour télécharger le rapport du mois.
+                  </Typography>
+                </Box>
+                <TextField
+                  select size="small" label="Année" value={yearFilter}
+                  onChange={(e) => setYearFilter(e.target.value)}
+                  sx={{ minWidth: 120 }}
+                >
+                  <MenuItem value="all">Toutes</MenuItem>
+                  {years.map((y) => <MenuItem key={y} value={y}>{y}</MenuItem>)}
+                </TextField>
+              </Box>
               <TableContainer sx={{ overflowX: 'auto' }}>
                 <Table size="small" sx={{ minWidth: 700 }}>
                   <TableHead>
@@ -401,7 +472,7 @@ export default function Dashboard() {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {[...data]
+                    {[...filteredMonthly]
                       .sort((a, b) => b.energy_kwh - a.energy_kwh)
                       .map((row, i) => {
                         const pct = row.energy_kwh > 0 ? (row.hc_kwh / row.energy_kwh * 100).toFixed(1) : '0.0'
@@ -415,8 +486,7 @@ export default function Dashboard() {
                             </TableCell>
                             <TableCell align="right">
                               <IconButton
-                                size="small"
-                                component="a"
+                                size="small" component="a"
                                 href={buildPdfReportUrl(+y, +m)}
                                 download={`evstats_${row.month}.pdf`}
                                 sx={{ color: 'text.secondary', '&:hover': { color: '#e85d04' } }}

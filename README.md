@@ -268,6 +268,11 @@ Le script conserve 30 jours de backups dans `/srv/docker_data/evstats/backups/`.
 - [x] Alertes consommation (seuil mensuel kWh / €, webhook)
 - [x] Export rapport PDF mensuel
 
+### v1.2.1
+- [x] Récapitulatif annuel (coût, énergie, économies par année)
+- [x] Filtre par année sur le classement des mois
+- [x] Amélioration responsive (tableaux scrollables, PieChart adaptatif, formulaires mobile)
+
 ---
 
 ## Contraintes connues
