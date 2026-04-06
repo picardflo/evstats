@@ -306,43 +306,59 @@ Le script conserve 30 jours de backups dans `/srv/docker_data/evstats/backups/`.
 
 ## Roadmap
 
-### Fait (MVP + V1)
-- [x] Import XLSX avec déduplication
-- [x] Parsing EVSEMaster
+### v1.0.0 — MVP
+- [x] Import XLSX avec déduplication (`record_id`)
+- [x] Parsing EVSEMaster (colonnes FR)
 - [x] Stockage SQLite
-- [x] Calcul HC/HP avec gestion des chevauchements
-- [x] Dashboard (KPIs, graphiques, classement)
-- [x] Tarifs EDF configurables via UI + recalcul
-- [x] Économies vs 100% HP
-- [x] Tendances mois N-1
-- [x] Vue 30 jours
-- [x] Tableau sessions paginé + filtrable
-- [x] Export CSV
-- [x] Backup automatique SQLite
+- [x] Calcul HC/HP avec découpage minute-à-minute des sessions
+- [x] Dashboard : KPIs, graphiques barres HC/HP, camembert, classement des mois
+- [x] Tarifs EDF configurables via UI + recalcul global
+- [x] Économies vs facturation 100% HP
+- [x] Tendances vs mois précédent
+- [x] Vue 30 jours / journalière / mensuelle
+- [x] Tableau sessions paginé + filtrable (statut, dates)
+- [x] Export CSV (filtres actifs)
+- [x] Script backup SQLite (30 jours de rétention)
 - [x] Déploiement Docker + Caddy
 
-### V2 (implémenté)
-- [x] Historique des tarifs avec périodes de validité (recalcul par tranche)
-- [x] Graphique fréquence horaire des sessions
-- [x] Alertes consommation (seuil mensuel kWh / €, webhook)
-- [x] Export rapport PDF mensuel
+### v1.1.0
+- [x] Historique des tarifs EDF avec périodes de validité (`valid_from`)
+- [x] Recalcul des coûts par tranche historique (bon tarif par date de session)
+- [x] Graphique fréquence horaire des sessions (coloration HC/HP)
+- [x] Alertes consommation mensuelle (seuil kWh / €, webhook ntfy/Slack/Discord)
+- [x] Export rapport PDF mensuel (KPIs + tableau des sessions)
+- [x] Footer version dynamique (fichier `VERSION` unique, backend + frontend)
+
+### v1.2.0
+- [x] Correction responsive : tableaux scrollables, PieChart adaptatif, formulaires mobile
+- [x] Légende explicative sur le graphique "Coût réel vs économies"
+- [x] PieChart dans `ResponsiveContainer` (adaptatif)
 
 ### v1.2.1
-- [x] Récapitulatif annuel (coût, énergie, économies par année)
+- [x] Récapitulatif annuel (énergie, coût, économies par année)
 - [x] Filtre par année sur le classement des mois
-- [x] Amélioration responsive (tableaux scrollables, PieChart adaptatif, formulaires mobile)
+
+### v1.3.0
+- [x] Page Véhicule : specs (batterie nette, conso réelle), photo upload
+- [x] KPIs au kilomètre : km rechargés, coût/100km, économies/100km, pleins équivalents
+- [x] Upload image véhicule (JPEG/PNG/WebP, stockée dans le volume Docker)
+- [x] Publication open source (GitHub, licence MIT, GitHub Actions GHCR)
+
+### À venir
+- [ ] Support multi-chargeurs
+- [ ] Comparaison coût électrique vs thermique (€/100km)
+- [ ] Import automatique via partage de fichier (Nextcloud, etc.)
 
 ---
 
 ## Contraintes connues
 
-- Pas d'API côté borne Morec ni EVSEMaster → dépendance aux exports manuels
+- Pas d'API côté borne Morec ni EVSEMaster → dépendance aux exports manuels `.xlsx`
 - Format de colonnes potentiellement variable selon la version EVSEMaster
-- Un seul chargeur dans les données actuelles (`Numéro de chargeur` unique)
-- Le tarif est appliqué globalement (pas d'historique par période) — V2
+- Règles HC/HP spécifiques au contrat **EDF France** (adaptable dans `backend/app/tariff.py`)
 
 ---
 
 ## Auteur
 
-Florian PICARD
+Florian PICARD — [GitHub](https://github.com/picardflo)
