@@ -48,7 +48,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlmodel import Session, select, func
 
-from .database import create_db, get_session
+from .database import create_db, get_session, engine
 from .models import ChargingSession, ImportLog, TariffConfig, TariffPeriod, TariffRule, AlertConfig, Vehicle
 from .parser import parse_xlsx
 from .tariff import DEFAULT_PRICE_HC, DEFAULT_PRICE_HP, compute_tariff, TariffRuleConfig, HcWindow
@@ -60,16 +60,39 @@ IMAGES_DIR = Path("/app/data/images")
 
 # ── Lifecycle ────────────────────────────────────────────────────────────────
 
+def _migrate():
+    """
+    Migrations SQLite manuelles : ajoute les colonnes manquantes sur les tables existantes.
+    SQLModel/SQLAlchemy ne modifie pas les tables déjà créées → nécessaire à chaque ajout de colonne.
+    Chaque ALTER TABLE est ignoré silencieusement si la colonne existe déjà.
+    """
+    from sqlalchemy import text
+    migrations = [
+        # v1.4.0 : TariffRule (nouvelle table, créée par create_db)
+        # v1.4.2 : colonne is_active sur vehicle
+        "ALTER TABLE vehicle ADD COLUMN is_active INTEGER NOT NULL DEFAULT 0",
+    ]
+    with engine.connect() as conn:
+        for stmt in migrations:
+            try:
+                conn.execute(text(stmt))
+                conn.commit()
+            except Exception:
+                pass  # Colonne déjà présente ou table inexistante → ignoré
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
     Exécuté au démarrage :
       - Crée les tables manquantes
+      - Migrations manuelles (nouvelles colonnes)
       - Initialise TariffConfig (singleton) si absent
       - Initialise TariffPeriod avec le tarif par défaut si vide
       - Initialise AlertConfig si absent
     """
     create_db()
+    _migrate()
     with next(get_session()) as db:
         # TariffConfig (singleton)
         cfg = db.get(TariffConfig, 1)
