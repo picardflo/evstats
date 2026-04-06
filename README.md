@@ -1,8 +1,67 @@
 # EVSE Stats WebUI (Morec / EVSEMaster)
 
+> 🇬🇧 **English summary below** — [Jump to English section](#english)
+
 Interface web de visualisation et d'analyse des sessions de charge issues de l'application **EVSEMaster**, via import de fichiers Excel (.xlsx).
 
 En l'absence d'API fournie par la borne Morec ou l'application EVSEMaster, cette solution repose sur des exports manuels réguliers.
+
+---
+
+<a name="english"></a>
+## 🇬🇧 English
+
+**EVSE Stats** is a self-hosted web dashboard for visualising EV charging sessions exported from the **EVSEMaster** app (used with Morec EV wallboxes).
+
+Since Morec / EVSEMaster provides no API, the workflow relies on manual `.xlsx` exports from the mobile app.
+
+> ⚠️ The HC/HP tariff split is specific to **French EDF contracts** (off-peak / peak hours). The rules are: Wednesday & weekends = 100% HC, weekdays HC window = 23:30→07:30. You can adapt `backend/app/tariff.py` for other tariff structures.
+
+### Features
+- Import `.xlsx` exports with automatic deduplication
+- HC/HP cost calculation (minute-by-minute session splitting)
+- Dashboard: KPIs, charts, monthly ranking, yearly summary
+- Tariff history with validity periods (recalculate at any time)
+- Consumption alerts via webhook (ntfy, Slack, Discord…)
+- Monthly PDF reports
+- Vehicle page: specs, photo, cost per 100 km
+- Hourly frequency chart
+- CSV export, SQLite backup script
+
+### Quick start
+
+```bash
+git clone https://github.com/picardflo/evstats.git
+cd evstats
+docker compose up -d --build
+```
+
+App available at **http://localhost:8080**
+
+Then go to **Paramètres** (Settings) to configure your tariff rates before importing data.
+
+### Reverse proxy (optional)
+
+To expose behind Caddy or Nginx, disable the port mapping via `docker-compose.override.yml`:
+
+```yaml
+# docker-compose.override.yml
+services:
+  evstats-frontend:
+    ports: []
+```
+
+See `docker-compose.override.yml.example` for a full homelab example.
+
+### Stack
+| Layer | Technology |
+|---|---|
+| Backend | Python 3.12 · FastAPI · SQLModel · SQLite |
+| Frontend | React 18 · Vite · Material UI (dark) · Recharts |
+| Container | Docker + Docker Compose |
+
+### License
+MIT — see [LICENSE](LICENSE)
 
 ---
 

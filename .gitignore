@@ -15,6 +15,7 @@ frontend/dist/
 # Docker
 caddy/data/
 caddy/config/
+docker-compose.override.yml
 
 # IDE
 .vscode/

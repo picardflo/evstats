@@ -1,13 +1,21 @@
 #!/bin/bash
 # Backup quotidien de la base SQLite evstats
-# À exécuter via cron sur la VM Docker :
-#   0 3 * * * /srv/docker_data/evstats/scripts/backup.sh
+#
+# Usage :
+#   DB_PATH=/path/to/evstats.db BACKUP_DIR=/path/to/backups ./backup.sh
+#
+# Exemple cron (VM Docker, volume sur /srv/docker_data) :
+#   0 3 * * * root DB_PATH=/srv/docker_data/evstats/evstats.db \
+#                   BACKUP_DIR=/srv/docker_data/evstats/backups \
+#                   /path/to/scripts/backup.sh
+#
+# Si les variables ne sont pas définies, les valeurs par défaut ci-dessous s'appliquent.
 
 set -euo pipefail
 
-DB_PATH="/srv/docker_data/evstats/evstats.db"
-BACKUP_DIR="/srv/docker_data/evstats/backups"
-RETENTION_DAYS=30
+DB_PATH="${DB_PATH:-/app/data/evstats.db}"
+BACKUP_DIR="${BACKUP_DIR:-/app/data/backups}"
+RETENTION_DAYS="${RETENTION_DAYS:-30}"
 
 mkdir -p "$BACKUP_DIR"
 
@@ -24,5 +32,5 @@ sqlite3 "$DB_PATH" ".backup '$DEST'"
 echo "$(date): Backup OK → $DEST ($(du -sh "$DEST" | cut -f1))"
 
 # Nettoyage des backups > RETENTION_DAYS jours
-find "$BACKUP_DIR" -name "evstats_*.db" -mtime +$RETENTION_DAYS -delete
+find "$BACKUP_DIR" -name "evstats_*.db" -mtime +"$RETENTION_DAYS" -delete
 echo "$(date): Nettoyage : backups de plus de $RETENTION_DAYS jours supprimés"

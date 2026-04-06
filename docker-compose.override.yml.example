@@ -1,0 +1,22 @@
+# Exemple de surcharge pour un homelab avec réseau externe existant (ex: Caddy).
+# Copier en docker-compose.override.yml (ignoré par git) et adapter.
+#
+# Docker Compose fusionne automatiquement ce fichier avec docker-compose.yml au démarrage.
+# Docs : https://docs.docker.com/compose/multiple-compose-files/merge/
+
+services:
+  evstats-api:
+    volumes:
+      # Remplacer le volume nommé par un chemin absolu sur l'hôte
+      - /srv/docker_data/evstats:/app/data
+    networks:
+      - home.lan
+
+  evstats-frontend:
+    ports: []          # Désactiver l'exposition directe (géré par le reverse proxy)
+    networks:
+      - home.lan
+
+networks:
+  home.lan:
+    external: true
