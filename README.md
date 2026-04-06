@@ -364,6 +364,9 @@ Le script conserve 30 jours de backups dans `/srv/docker_data/evstats/backups/`.
 - [x] Upload image véhicule (JPEG/PNG/WebP, stockée dans le volume Docker)
 - [x] Publication open source (GitHub, licence MIT, GitHub Actions GHCR)
 
+### v1.4.1
+- [x] Légendes des graphiques remplacées par un bouton ⓘ avec tooltip au survol
+
 ### v1.4.0
 - [x] Règles HC/HP entièrement configurables depuis l'interface Paramètres
 - [x] Jours entièrement HC paramétrables (cases à cocher Lun→Dim)
