@@ -11,10 +11,12 @@ Endpoints disponibles :
   GET    /api/imports                         Historique des imports
   GET    /api/config/tariff                   Tarif actif
   PUT    /api/config/tariff                   Mise à jour tarif actif (legacy)
-  POST   /api/config/tariff/recalculate       Recalcul coûts par période tarifaire (V2)
+  POST   /api/config/tariff/recalculate       Recalcul HC/HP + coûts par période (V2)
   GET    /api/config/tariff/periods           Liste des périodes tarifaires (V2)
   POST   /api/config/tariff/periods           Nouvelle période tarifaire (V2)
   DELETE /api/config/tariff/periods/{id}      Supprime une période (V2)
+  GET    /api/config/tariff-rule              Règles HC/HP configurables (V2)
+  PUT    /api/config/tariff-rule              Met à jour les règles HC/HP (V2)
   GET    /api/alerts                          Config alertes (V2)
   PUT    /api/alerts                          Met à jour config alertes (V2)
   POST   /api/alerts/check                    Vérifie et envoie alertes si seuil atteint (V2)
@@ -30,6 +32,7 @@ Endpoints disponibles :
 
 import csv
 import io
+import json
 import httpx
 import mimetypes
 from pathlib import Path
@@ -45,9 +48,9 @@ from pydantic import BaseModel
 from sqlmodel import Session, select, func
 
 from .database import create_db, get_session
-from .models import ChargingSession, ImportLog, TariffConfig, TariffPeriod, AlertConfig, Vehicle
+from .models import ChargingSession, ImportLog, TariffConfig, TariffPeriod, TariffRule, AlertConfig, Vehicle
 from .parser import parse_xlsx
-from .tariff import DEFAULT_PRICE_HC, DEFAULT_PRICE_HP
+from .tariff import DEFAULT_PRICE_HC, DEFAULT_PRICE_HP, compute_tariff, TariffRuleConfig, HcWindow
 from .report import generate_monthly_pdf
 
 # Répertoire de stockage des images véhicules (dans le volume Docker)
@@ -83,6 +86,11 @@ async def lifespan(app: FastAPI):
                 price_hp=cfg.price_hp,
                 label="Tarif initial (à configurer)",
             ))
+
+        # TariffRule (singleton) : règles HC/HP configurables
+        rule = db.get(TariffRule, 1)
+        if rule is None:
+            db.add(TariffRule(id=1))
 
         # AlertConfig (singleton)
         alert = db.get(AlertConfig, 1)
@@ -137,6 +145,23 @@ def get_tariff_for_date(db: Session, session_date: date) -> tuple[float, float]:
         return oldest.price_hc, oldest.price_hp
 
     return DEFAULT_PRICE_HC, DEFAULT_PRICE_HP
+
+
+def get_tariff_rule_config(db: Session) -> TariffRuleConfig:
+    """
+    Charge les règles HC/HP depuis la base et retourne un TariffRuleConfig.
+    Fallback sur la règle par défaut si absent ou JSON invalide.
+    """
+    rule = db.get(TariffRule, 1)
+    if rule is None:
+        return TariffRuleConfig()
+    try:
+        days = json.loads(rule.full_hc_days)
+        raw_windows = json.loads(rule.hc_windows)
+        windows = [HcWindow(**w) for w in raw_windows]
+        return TariffRuleConfig(full_hc_days=days, hc_windows=windows)
+    except Exception:
+        return TariffRuleConfig()
 
 
 def _apply_session_filters(query, end_status, start_date, end_date):
@@ -275,6 +300,26 @@ class RecalcResult(BaseModel):
     detail: str
 
 
+class TariffRuleWindow(BaseModel):
+    start_h: int
+    start_m: int
+    end_h:   int
+    end_m:   int
+
+
+class TariffRuleOut(BaseModel):
+    full_hc_days: List[int]
+    hc_windows:   List[TariffRuleWindow]
+    label:        str
+    updated_at:   datetime
+
+
+class TariffRuleIn(BaseModel):
+    full_hc_days: List[int]
+    hc_windows:   List[TariffRuleWindow]
+    label:        str = ""
+
+
 class AlertConfigOut(BaseModel):
     enabled: bool
     threshold_kwh: float
@@ -312,6 +357,9 @@ async def import_xlsx(
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
+    # Règles HC/HP configurées par l'utilisateur
+    rule_config = get_tariff_rule_config(db)
+
     new_rows = 0
     duplicate_rows = 0
 
@@ -323,9 +371,12 @@ async def import_xlsx(
             duplicate_rows += 1
             continue
 
+        # Recalcul HC/HP avec les règles configurées (pas celles du parser par défaut)
+        tariff = compute_tariff(p.start_time, p.end_time, p.energy_kwh, rule=rule_config)
+
         # Tarif applicable selon la date de la session
         price_hc, price_hp = get_tariff_for_date(db, p.start_time.date())
-        cost_eur = round(p.hc_kwh * price_hc + p.hp_kwh * price_hp, 4)
+        cost_eur = round(tariff.hc_kwh * price_hc + tariff.hp_kwh * price_hp, 4)
 
         db.add(ChargingSession(
             record_id=p.record_id,
@@ -335,8 +386,8 @@ async def import_xlsx(
             duration_minutes=p.duration_minutes,
             energy_kwh=p.energy_kwh,
             cost_eur=cost_eur,
-            hc_kwh=p.hc_kwh,
-            hp_kwh=p.hp_kwh,
+            hc_kwh=tariff.hc_kwh,
+            hp_kwh=tariff.hp_kwh,
             end_status=p.end_status,
             start_user=p.start_user,
         ))
@@ -542,23 +593,65 @@ def delete_tariff_period(period_id: int, db: Session = Depends(get_session)):
     return {"ok": True}
 
 
+@app.get("/api/config/tariff-rule", response_model=TariffRuleOut)
+def get_tariff_rule(db: Session = Depends(get_session)):
+    """Retourne les règles HC/HP configurées (singleton id=1)."""
+    rule = db.get(TariffRule, 1) or TariffRule(id=1)
+    return TariffRuleOut(
+        full_hc_days=json.loads(rule.full_hc_days),
+        hc_windows=[TariffRuleWindow(**w) for w in json.loads(rule.hc_windows)],
+        label=rule.label,
+        updated_at=rule.updated_at,
+    )
+
+
+@app.put("/api/config/tariff-rule", response_model=TariffRuleOut)
+def update_tariff_rule(body: TariffRuleIn, db: Session = Depends(get_session)):
+    """
+    Met à jour les règles HC/HP.
+    Après modification, pensez à relancer le recalcul pour mettre à jour
+    les sessions existantes.
+    """
+    rule = db.get(TariffRule, 1)
+    if rule is None:
+        rule = TariffRule(id=1)
+    rule.full_hc_days = json.dumps(body.full_hc_days)
+    rule.hc_windows   = json.dumps([w.model_dump() for w in body.hc_windows])
+    rule.label        = body.label
+    rule.updated_at   = datetime.utcnow()
+    db.add(rule)
+    db.commit()
+    db.refresh(rule)
+    return TariffRuleOut(
+        full_hc_days=json.loads(rule.full_hc_days),
+        hc_windows=[TariffRuleWindow(**w) for w in json.loads(rule.hc_windows)],
+        label=rule.label,
+        updated_at=rule.updated_at,
+    )
+
+
 @app.post("/api/config/tariff/recalculate", response_model=RecalcResult)
 def recalculate_costs(db: Session = Depends(get_session)):
     """
-    Recalcule cost_eur pour toutes les sessions en appliquant
-    le tarif de la période correspondant à la date de chaque session.
+    Recalcule hc_kwh, hp_kwh ET cost_eur pour toutes les sessions.
 
-    C'est la vraie V2 du recalcul : chaque session reçoit le bon tarif
-    historique, pas un tarif unique global.
+    - hc_kwh / hp_kwh : recalculés avec les règles HC/HP actuellement configurées
+    - cost_eur        : recalculé avec le tarif historique de la période (valid_from)
+
+    À utiliser après un changement de règles HC/HP ou de tarifs.
     """
-    sessions = db.exec(select(ChargingSession)).all()
+    rule_config = get_tariff_rule_config(db)
+    sessions    = db.exec(select(ChargingSession)).all()
     for s in sessions:
+        tariff     = compute_tariff(s.start_time, s.end_time, s.energy_kwh, rule=rule_config)
         price_hc, price_hp = get_tariff_for_date(db, s.start_time.date())
-        s.cost_eur = round(s.hc_kwh * price_hc + s.hp_kwh * price_hp, 4)
+        s.hc_kwh   = tariff.hc_kwh
+        s.hp_kwh   = tariff.hp_kwh
+        s.cost_eur = round(tariff.hc_kwh * price_hc + tariff.hp_kwh * price_hp, 4)
     db.commit()
     return RecalcResult(
         updated=len(sessions),
-        detail="Recalcul effectué avec les tarifs historiques par période",
+        detail="Recalcul HC/HP + coûts effectué avec règles et tarifs historiques",
     )
 
 

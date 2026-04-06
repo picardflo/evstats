@@ -1,12 +1,8 @@
 """
-Moteur de calcul tarifaire EDF.
+Moteur de calcul tarifaire.
 
-Option souscrite : Heures Creuses + Week-end + Mercredi (12 kVA)
-
-Règles de classification HC/HP :
-  - Mercredi         → 100% Heures Creuses (toute la journée)
-  - Samedi/Dimanche  → 100% Heures Creuses (toute la journée)
-  - Lun/Mar/Jeu/Ven  → HC si 23h30 ≤ t < 07h30, HP sinon
+Les règles de classification HC/HP sont entièrement configurables via TariffRuleConfig.
+La configuration par défaut correspond au contrat EDF HC/HP + Week-end + Mercredi (12 kVA).
 
 Algorithme :
   La session est découpée en tranches de SLOT_MINUTES minutes.
@@ -22,7 +18,7 @@ via l'interface. Les valeurs ci-dessous servent uniquement à l'init.
 """
 
 from datetime import datetime, timedelta
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 # ── Tarifs par défaut ────────────────────────────────────────────────────────
 DEFAULT_PRICE_HC = 0.1724  # €/kWh — Heures Creuses
@@ -30,48 +26,105 @@ DEFAULT_PRICE_HP = 0.2305  # €/kWh — Heures Pleines
 
 # Résolution du découpage temporel (en minutes).
 # 1 minute est un bon compromis précision/performance.
-# Réduire à 0.5 pour plus de précision sur les sessions à cheval sur 23h30/07h30.
 SLOT_MINUTES = 1
 
 
-def _is_hc(dt: datetime) -> bool:
+# ── Configuration des règles HC/HP ───────────────────────────────────────────
+
+@dataclass
+class HcWindow:
+    """
+    Plage horaire Heures Creuses (peut chevaucher minuit).
+
+    Exemple : 23h30 → 07h30 : start_h=23, start_m=30, end_h=7, end_m=30
+    Exemple : 00h00 → 07h00 : start_h=0,  start_m=0,  end_h=7, end_m=0
+    """
+    start_h: int
+    start_m: int
+    end_h:   int
+    end_m:   int
+
+
+@dataclass
+class TariffRuleConfig:
+    """
+    Configuration des règles de classification HC/HP.
+
+    full_hc_days : numéros de jours de semaine entièrement en HC
+                   (0=Lun, 1=Mar, 2=Mer, 3=Jeu, 4=Ven, 5=Sam, 6=Dim)
+    hc_windows   : plages horaires HC applicables aux jours non couverts par full_hc_days.
+                   Plusieurs fenêtres possibles. Une fenêtre peut chevaucher minuit
+                   (ex : 23h30→07h30).
+
+    Exemples de configurations :
+      EDF HC/HP + Week-end + Mercredi (défaut) :
+        full_hc_days = [2, 5, 6]
+        hc_windows   = [HcWindow(23, 30, 7, 30)]
+
+      HC/HP classique (sans mercredi ni week-end) :
+        full_hc_days = []
+        hc_windows   = [HcWindow(22, 0, 6, 0)]
+
+      Deux plages HC par jour :
+        full_hc_days = []
+        hc_windows   = [HcWindow(0, 0, 7, 0), HcWindow(12, 0, 14, 0)]
+    """
+    full_hc_days: list = field(default_factory=lambda: [2, 5, 6])
+    hc_windows:   list = field(default_factory=lambda: [
+        HcWindow(start_h=23, start_m=30, end_h=7, end_m=30)
+    ])
+
+
+# Règle par défaut : EDF HC/HP + Week-end + Mercredi
+DEFAULT_RULE = TariffRuleConfig()
+
+
+# ── Moteur ───────────────────────────────────────────────────────────────────
+
+def _is_hc(dt: datetime, rule: TariffRuleConfig = DEFAULT_RULE) -> bool:
     """
     Retourne True si l'instant `dt` est classé Heures Creuses.
 
     Logique :
-      - Mercredi (weekday=2)         → HC
-      - Week-end (weekday 5=sam, 6=dim) → HC
-      - Autres jours : HC si heure >= 23h30 OU heure < 07h30
-        (la plage HC chevauche minuit, d'où le OU et non le ET)
+      1. Si le jour de semaine est dans full_hc_days → HC toute la journée.
+      2. Sinon, parcourt les hc_windows. Si dt tombe dans une plage → HC.
+         Une plage chevauchant minuit (start > end) utilise un OR (ex: 23h30→07h30).
+         Une plage intra-journalière (start < end) utilise un AND (ex: 12h00→14h00).
+      3. Aucune plage correspondante → HP.
     """
-    weekday = dt.weekday()  # 0=lun, 1=mar, 2=mer, 3=jeu, 4=ven, 5=sam, 6=dim
+    weekday = dt.weekday()  # 0=lun … 6=dim
 
-    # Mercredi et week-end : 100% HC
-    if weekday in (2, 5, 6):
+    if weekday in rule.full_hc_days:
         return True
 
-    # Semaine hors mercredi : plage HC 23h30 → 07h30
     total_minutes = dt.hour * 60 + dt.minute
-    hc_start = 23 * 60 + 30  # 1410 min depuis minuit
-    hc_end   =  7 * 60 + 30  #  450 min depuis minuit
-
-    return total_minutes >= hc_start or total_minutes < hc_end
+    for w in rule.hc_windows:
+        start = w.start_h * 60 + w.start_m
+        end   = w.end_h   * 60 + w.end_m
+        if start > end:  # Chevauche minuit (ex : 23h30 → 07h30)
+            if total_minutes >= start or total_minutes < end:
+                return True
+        else:            # Plage intra-journalière (ex : 12h00 → 14h00)
+            if start <= total_minutes < end:
+                return True
+    return False
 
 
 @dataclass
 class TariffResult:
     """Résultat du calcul tarifaire pour une session."""
-    hc_kwh: float   # Énergie consommée en Heures Creuses
-    hp_kwh: float   # Énergie consommée en Heures Pleines
-    cost_eur: float # Coût total = hc_kwh × price_hc + hp_kwh × price_hp
+    hc_kwh:   float  # Énergie consommée en Heures Creuses
+    hp_kwh:   float  # Énergie consommée en Heures Pleines
+    cost_eur: float  # Coût total = hc_kwh × price_hc + hp_kwh × price_hp
 
 
 def compute_tariff(
-    start: datetime,
-    end: datetime,
+    start:      datetime,
+    end:        datetime,
     energy_kwh: float,
-    price_hc: float = DEFAULT_PRICE_HC,
-    price_hp: float = DEFAULT_PRICE_HP,
+    price_hc:   float = DEFAULT_PRICE_HC,
+    price_hp:   float = DEFAULT_PRICE_HP,
+    rule:       TariffRuleConfig = DEFAULT_RULE,
 ) -> TariffResult:
     """
     Calcule la répartition HC/HP et le coût d'une session de charge.
@@ -82,17 +135,17 @@ def compute_tariff(
         energy_kwh: Énergie totale consommée (kWh)
         price_hc:   Prix HC en €/kWh (défaut : tarif EDF en vigueur)
         price_hp:   Prix HP en €/kWh (défaut : tarif EDF en vigueur)
+        rule:       Règles de classification HC/HP (défaut : EDF Mercredi + WE)
 
     Returns:
         TariffResult avec hc_kwh, hp_kwh, cost_eur
 
     Exemple :
-        Session mardi 23h00 → mercredi 08h00, 20 kWh
+        Session mardi 23h00 → mercredi 08h00, 20 kWh, règle EDF défaut
         → 30 min HP (23h00→23h30) + 30 min HC (23h30→00h00)
           + 8h HC (mercredi complet jusqu'à 08h00)
         → très majoritairement HC → coût réduit
     """
-    # Cas dégénérés : session invalide ou sans énergie
     if start >= end or energy_kwh <= 0:
         return TariffResult(hc_kwh=0.0, hp_kwh=0.0, cost_eur=0.0)
 
@@ -105,10 +158,10 @@ def compute_tariff(
 
     # Parcours minute par minute de la session
     while current < end:
-        next_slot = min(current + slot, end)
+        next_slot    = min(current + slot, end)
         slot_duration = (next_slot - current).total_seconds() / 60
 
-        if _is_hc(current):
+        if _is_hc(current, rule):
             hc_minutes += slot_duration
         else:
             hp_minutes += slot_duration
@@ -119,8 +172,8 @@ def compute_tariff(
     hc_ratio = hc_minutes / total_duration_min if total_duration_min > 0 else 0.0
     hp_ratio = hp_minutes / total_duration_min if total_duration_min > 0 else 0.0
 
-    hc_kwh = energy_kwh * hc_ratio
-    hp_kwh = energy_kwh * hp_ratio
+    hc_kwh   = energy_kwh * hc_ratio
+    hp_kwh   = energy_kwh * hp_ratio
     cost_eur = hc_kwh * price_hc + hp_kwh * price_hp
 
     return TariffResult(

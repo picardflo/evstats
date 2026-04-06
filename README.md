@@ -15,11 +15,12 @@ En l'absence d'API fournie par la borne Morec ou l'application EVSEMaster, cette
 
 Since Morec / EVSEMaster provides no API, the workflow relies on manual `.xlsx` exports from the mobile app.
 
-> ⚠️ The HC/HP tariff split is specific to **French EDF contracts** (off-peak / peak hours). The rules are: Wednesday & weekends = 100% HC, weekdays HC window = 23:30→07:30. You can adapt `backend/app/tariff.py` for other tariff structures.
+> The HC/HP tariff split targets **French EDF contracts**. Rules are fully configurable from the Settings page (full-HC days, time windows). Other structures — plain HC/HP without Wednesday or weekends, two HC windows per day, etc. — are supported. The **Tempo** tariff (3-tier: Blue/White/Red days published daily by RTE) is not yet supported as it requires a live external API for the day-colour calendar.
 
 ### Features
 - Import `.xlsx` exports with automatic deduplication
 - HC/HP cost calculation (minute-by-minute session splitting)
+- **Configurable HC/HP rules**: full-HC days, multiple time windows — adapts to any French EDF contract
 - Dashboard: KPIs, charts, monthly ranking, yearly summary
 - Tariff history with validity periods (recalculate at any time)
 - Consumption alerts via webhook (ntfy, Slack, Discord…)
@@ -111,8 +112,8 @@ MIT — see [LICENSE](LICENSE)
 
 ### Paramètres
 - Édition des tarifs HC et HP (en c€/kWh)
-- Recalcul des coûts sur l'historique complet
-- Affichage des règles tarifaires en vigueur
+- Règles HC/HP configurables : jours entièrement HC, plages horaires (plusieurs fenêtres possibles)
+- Recalcul HC/HP + coûts sur l'historique complet en un clic
 
 ---
 
@@ -363,7 +364,16 @@ Le script conserve 30 jours de backups dans `/srv/docker_data/evstats/backups/`.
 - [x] Upload image véhicule (JPEG/PNG/WebP, stockée dans le volume Docker)
 - [x] Publication open source (GitHub, licence MIT, GitHub Actions GHCR)
 
+### v1.4.0
+- [x] Règles HC/HP entièrement configurables depuis l'interface Paramètres
+- [x] Jours entièrement HC paramétrables (cases à cocher Lun→Dim)
+- [x] Plages horaires HC configurables (plusieurs fenêtres possibles, support chevauchement minuit)
+- [x] Libellé libre pour identifier le contrat (ex: "EDF HC/HP + Week-end + Mercredi")
+- [x] Recalcul étendu : recalcule la répartition HC/HP **et** les coûts sur tout l'historique
+- [x] Import utilise les règles configurées (pas les règles par défaut codées en dur)
+
 ### À venir
+- [ ] Support du tarif Tempo EDF (Bleu/Blanc/Rouge) — nécessite intégration API RTE pour le calendrier des couleurs de jours
 - [ ] Support multi-chargeurs
 - [ ] Comparaison coût électrique vs thermique (€/100km)
 - [ ] Import automatique via partage de fichier (Nextcloud, etc.)
@@ -374,7 +384,11 @@ Le script conserve 30 jours de backups dans `/srv/docker_data/evstats/backups/`.
 
 - Pas d'API côté borne Morec ni EVSEMaster → dépendance aux exports manuels `.xlsx`
 - Format de colonnes potentiellement variable selon la version EVSEMaster
-- Règles HC/HP spécifiques au contrat **EDF France** (adaptable dans `backend/app/tariff.py`)
+- **Tarif Tempo EDF non supporté** : le Tempo repose sur une couleur de jour (Bleu/Blanc/Rouge)
+  publiée chaque soir par RTE pour le lendemain, avec des plages HC/HP et des prix différents pour
+  chaque couleur. L'intégrer nécessiterait d'interroger l'API RTE en temps réel pour obtenir le
+  calendrier des couleurs, et d'adapter le moteur de calcul pour gérer trois niveaux tarifaires.
+  Cette évolution est identifiée en roadmap mais hors scope de la version actuelle.
 
 ---
 

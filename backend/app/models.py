@@ -6,6 +6,7 @@ Tables :
   - import_log        : historique des fichiers importés
   - tariff_config     : tarif actif affiché dans l'UI (singleton id=1, kept for compat)
   - tariff_period     : historique des périodes tarifaires (V2)
+  - tariff_rule       : règles HC/HP configurables (singleton id=1) (V2)
   - alert_config      : configuration des alertes de consommation (V2)
   - vehicle           : véhicules électriques avec specs (V2)
 """
@@ -86,6 +87,31 @@ class TariffPeriod(SQLModel, table=True):
     price_hp:   float          # €/kWh Heures Pleines
     label:      str  = Field(default="")  # Libellé optionnel ex: "Révision février 2026"
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class TariffRule(SQLModel, table=True):
+    """
+    Règles de classification HC/HP (singleton id=1).
+
+    full_hc_days : JSON array de numéros de jour (0=Lun … 6=Dim) entièrement HC
+    hc_windows   : JSON array de plages horaires HC
+                   [{start_h, start_m, end_h, end_m}, ...]
+                   Une plage peut chevaucher minuit (ex : start=23h30, end=07h30).
+    label        : libellé libre pour identifier le contrat
+
+    Exemples :
+      EDF HC/HP + Week-end + Mercredi :
+        full_hc_days = [2, 5, 6]
+        hc_windows   = [{"start_h": 23, "start_m": 30, "end_h": 7, "end_m": 30}]
+      HC/HP classique (sans mercredi ni week-end) :
+        full_hc_days = []
+        hc_windows   = [{"start_h": 22, "start_m": 0, "end_h": 6, "end_m": 0}]
+    """
+    id:           int      = Field(default=1, primary_key=True)
+    full_hc_days: str      = Field(default='[2, 5, 6]')
+    hc_windows:   str      = Field(default='[{"start_h": 23, "start_m": 30, "end_h": 7, "end_m": 30}]')
+    label:        str      = Field(default="EDF HC/HP + Week-end + Mercredi")
+    updated_at:   datetime = Field(default_factory=datetime.utcnow)
 
 
 class Vehicle(SQLModel, table=True):

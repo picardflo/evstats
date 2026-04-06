@@ -139,6 +139,26 @@ export async function deleteTariffPeriod(id) {
   await api.delete(`/config/tariff/periods/${id}`)
 }
 
+// ── Règles HC/HP (V2) ────────────────────────────────────────────────────────
+
+/**
+ * Récupère les règles HC/HP configurées.
+ * @returns {Promise<{full_hc_days: number[], hc_windows: Object[], label: string, updated_at: string}>}
+ */
+export async function fetchTariffRule() {
+  const { data } = await api.get('/config/tariff-rule')
+  return data
+}
+
+/**
+ * Met à jour les règles HC/HP.
+ * @param {{ full_hc_days: number[], hc_windows: Object[], label: string }} payload
+ */
+export async function updateTariffRule(payload) {
+  const { data } = await api.put('/config/tariff-rule', payload)
+  return data
+}
+
 // ── Stats horaires (V2) ───────────────────────────────────────────────────────
 
 export async function fetchHourlyStats() {

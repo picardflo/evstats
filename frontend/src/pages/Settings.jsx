@@ -15,15 +15,27 @@ import {
   Box, Typography, Paper, TextField, Button, Alert, CircularProgress,
   Divider, Grid, Chip, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, IconButton, Dialog, DialogTitle, DialogContent,
-  DialogActions,
+  DialogActions, Checkbox, FormControlLabel, FormGroup,
 } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import DeleteIcon from '@mui/icons-material/Delete'
 import RecyclingIcon from '@mui/icons-material/Recycling'
+import SaveIcon from '@mui/icons-material/Save'
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import {
   fetchTariffConfig, fetchTariffPeriods, addTariffPeriod,
-  deleteTariffPeriod, recalculateCosts,
+  deleteTariffPeriod, recalculateCosts, fetchTariffRule, updateTariffRule,
 } from '../api/client'
+
+const DAY_LABELS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim']
+
+function fmtTime(h, m) {
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}
+function parseTime(str) {
+  const [h, m] = (str || '00:00').split(':').map(Number)
+  return { h: isNaN(h) ? 0 : h, m: isNaN(m) ? 0 : m }
+}
 
 export default function Settings() {
   const [config, setConfig]         = useState(null)
@@ -33,7 +45,7 @@ export default function Settings() {
   const [success, setSuccess]       = useState(null)
   const [error, setError]           = useState(null)
 
-  // Formulaire nouvelle période
+  // Formulaire nouvelle période tarifaire
   const [dialogOpen, setDialogOpen] = useState(false)
   const [newFrom, setNewFrom]       = useState('')
   const [newHc, setNewHc]           = useState('')
@@ -41,11 +53,27 @@ export default function Settings() {
   const [newLabel, setNewLabel]     = useState('')
   const [addLoading, setAddLoading] = useState(false)
 
+  // Règles HC/HP éditables
+  const [rule, setRule]             = useState(null)
+  const [editDays, setEditDays]     = useState([])
+  const [editWindows, setEditWindows] = useState([])
+  const [editLabel, setEditLabel]   = useState('')
+  const [ruleLoading, setRuleLoading] = useState(false)
+  // Formulaire ajout plage HC
+  const [newWinStart, setNewWinStart] = useState('23:30')
+  const [newWinEnd, setNewWinEnd]     = useState('07:30')
+
   const loadData = useCallback(async () => {
     try {
-      const [cfg, ps] = await Promise.all([fetchTariffConfig(), fetchTariffPeriods()])
+      const [cfg, ps, rl] = await Promise.all([
+        fetchTariffConfig(), fetchTariffPeriods(), fetchTariffRule(),
+      ])
       setConfig(cfg)
       setPeriods(ps)
+      setRule(rl)
+      setEditDays(rl.full_hc_days)
+      setEditWindows(rl.hc_windows)
+      setEditLabel(rl.label)
     } catch {
       setError('Impossible de charger la configuration')
     } finally {
@@ -93,12 +121,46 @@ export default function Settings() {
     setSuccess(null); setError(null)
     try {
       const result = await recalculateCosts()
-      setSuccess(`${result.updated} sessions recalculées avec les tarifs historiques par période.`)
+      setSuccess(`${result.updated} sessions recalculées (HC/HP + coûts) avec règles et tarifs historiques.`)
     } catch {
       setError('Erreur lors du recalcul')
     } finally {
       setRecalcLoading(false)
     }
+  }
+
+  const handleSaveRule = async () => {
+    setRuleLoading(true)
+    setSuccess(null); setError(null)
+    try {
+      const saved = await updateTariffRule({
+        full_hc_days: editDays,
+        hc_windows:   editWindows,
+        label:        editLabel,
+      })
+      setRule(saved)
+      setSuccess('Règles HC/HP enregistrées. Pensez à recalculer HC/HP + coûts pour mettre à jour l\'historique.')
+    } catch {
+      setError('Erreur lors de la sauvegarde des règles')
+    } finally {
+      setRuleLoading(false)
+    }
+  }
+
+  const toggleDay = (day) => {
+    setEditDays(prev =>
+      prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
+    )
+  }
+
+  const addWindow = () => {
+    const s = parseTime(newWinStart)
+    const e = parseTime(newWinEnd)
+    setEditWindows(prev => [...prev, { start_h: s.h, start_m: s.m, end_h: e.h, end_m: e.m }])
+  }
+
+  const removeWindow = (idx) => {
+    setEditWindows(prev => prev.filter((_, i) => i !== idx))
   }
 
   if (loading) return <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}><CircularProgress /></Box>
@@ -190,24 +252,121 @@ export default function Settings() {
             onClick={handleRecalc}
             disabled={recalcLoading}
           >
-            Recalculer tous les coûts
+            Recalculer HC/HP + coûts
           </Button>
           <Typography variant="caption" color="text.secondary">
-            Applique le bon tarif historique à chaque session selon sa date.
+            Recalcule la répartition HC/HP et le coût de chaque session selon les règles et tarifs historiques actifs.
           </Typography>
         </Box>
       </Paper>
 
-      {/* Règles tarifaires */}
-      <Paper sx={{ p: 3, borderRadius: 3, maxWidth: { sm: 500 } }}>
-        <Typography variant="h6" fontWeight={600} gutterBottom>Règles HC/HP (non modifiables)</Typography>
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
-          <Chip label="Mercredi → 100% HC"           color="info"    size="small" />
-          <Chip label="Week-end → 100% HC"            color="info"    size="small" />
-          <Chip label="Lun/Mar/Jeu/Ven HC : 23h30→07h30" color="default" size="small" />
-          <Chip label="Lun/Mar/Jeu/Ven HP : 07h30→23h30" color="warning" size="small" />
-        </Box>
-      </Paper>
+      {/* Règles HC/HP — éditables */}
+      {rule && (
+        <Paper sx={{ p: 3, borderRadius: 3 }}>
+          <Typography variant="h6" fontWeight={600} gutterBottom>Règles HC/HP</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Configurez les jours et plages horaires classés Heures Creuses selon votre contrat.
+            Après modification, utilisez "Recalculer HC/HP + coûts" pour mettre à jour l'historique.
+          </Typography>
+
+          {/* Libellé du contrat */}
+          <TextField
+            fullWidth size="small" label="Libellé du contrat"
+            value={editLabel} onChange={e => setEditLabel(e.target.value)}
+            placeholder="Ex: EDF HC/HP + Week-end + Mercredi"
+            sx={{ mb: 2.5, maxWidth: { sm: 420 } }}
+          />
+
+          {/* Jours entièrement HC */}
+          <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.5 }}>
+            Jours entièrement en Heures Creuses
+          </Typography>
+          <FormGroup row sx={{ mb: 2.5 }}>
+            {DAY_LABELS.map((label, idx) => (
+              <FormControlLabel
+                key={idx}
+                control={
+                  <Checkbox
+                    size="small"
+                    checked={editDays.includes(idx)}
+                    onChange={() => toggleDay(idx)}
+                    sx={{ color: '#00b4d8', '&.Mui-checked': { color: '#00b4d8' } }}
+                  />
+                }
+                label={<Typography variant="body2">{label}</Typography>}
+              />
+            ))}
+          </FormGroup>
+
+          {/* Plages horaires HC */}
+          <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
+            Plages horaires Heures Creuses <Typography component="span" variant="caption" color="text.secondary">(sur les autres jours)</Typography>
+          </Typography>
+
+          {editWindows.length === 0 && (
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              Aucune plage définie — tous les instants seront classés HP.
+            </Typography>
+          )}
+
+          {editWindows.map((w, idx) => (
+            <Box key={idx} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.75 }}>
+              <Chip
+                label={`${fmtTime(w.start_h, w.start_m)} → ${fmtTime(w.end_h, w.end_m)}`}
+                color="info" size="small"
+              />
+              <IconButton size="small" color="error" onClick={() => removeWindow(idx)}>
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </Box>
+          ))}
+
+          {/* Ajout d'une plage */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1.5, flexWrap: 'wrap' }}>
+            <TextField
+              size="small" type="time" label="Début HC" value={newWinStart}
+              onChange={e => setNewWinStart(e.target.value)}
+              InputLabelProps={{ shrink: true }} sx={{ width: 130 }}
+            />
+            <Typography variant="body2" color="text.secondary">→</Typography>
+            <TextField
+              size="small" type="time" label="Fin HC" value={newWinEnd}
+              onChange={e => setNewWinEnd(e.target.value)}
+              InputLabelProps={{ shrink: true }} sx={{ width: 130 }}
+            />
+            <Button size="small" variant="outlined" startIcon={<AddIcon />} onClick={addWindow}>
+              Ajouter la plage
+            </Button>
+          </Box>
+
+          <Divider sx={{ my: 2.5 }} />
+
+          {/* Note Tempo */}
+          <Box sx={{ display: 'flex', gap: 1, p: 1.5, borderRadius: 2, bgcolor: 'rgba(255,255,255,0.04)', mb: 2 }}>
+            <InfoOutlinedIcon fontSize="small" sx={{ color: 'text.secondary', mt: 0.2, flexShrink: 0 }} />
+            <Box>
+              <Typography variant="subtitle2" fontWeight={600}>Tarif Tempo EDF — non supporté</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Le tarif Tempo repose sur une <strong>couleur de jour</strong> (Bleu / Blanc / Rouge) publiée chaque
+                soir par RTE pour le lendemain. Chaque couleur a ses propres plages HC/HP et tarifs.
+                Intégrer le Tempo nécessiterait d'interroger l'API RTE en temps réel (ou de tenir un
+                calendrier des couleurs à jour manuellement), et d'adapter le moteur de calcul pour
+                gérer trois niveaux de prix. Cette évolution est identifiée en roadmap mais hors scope
+                de la version actuelle.
+              </Typography>
+            </Box>
+          </Box>
+
+          <Button
+            variant="contained"
+            startIcon={ruleLoading ? <CircularProgress size={16} /> : <SaveIcon />}
+            onClick={handleSaveRule}
+            disabled={ruleLoading}
+          >
+            Enregistrer les règles
+          </Button>
+        </Paper>
+      )}
 
       {/* Dialog ajout période */}
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="xs" fullWidth>
