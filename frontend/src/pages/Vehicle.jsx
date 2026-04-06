@@ -157,7 +157,8 @@ export default function Vehicle() {
     setSuccess(null); setError(null)
     try {
       await uploadVehicleImage(vehicleId, file)
-      // Force le rechargement de l'image en changeant la clé
+      // Recharge les véhicules (met à jour image_filename) + force cache-bust de l'img
+      await load()
       setImgKeys((prev) => ({ ...prev, [vehicleId]: Date.now() }))
       setSuccess('Photo mise à jour.')
     } catch (e) {
@@ -207,24 +208,20 @@ export default function Vehicle() {
                   {/* Photo */}
                   <Grid item xs={12} sm="auto">
                     <Box sx={{ position: 'relative', width: { xs: '100%', sm: 200 }, mx: { xs: 'auto', sm: 0 } }}>
-                      <Box
-                        component={v.image_filename ? 'img' : 'div'}
-                        src={v.image_filename ? `${vehicleImageUrl(v.id)}?k=${imgKey}` : undefined}
-                        alt={v.name}
-                        sx={{
-                          width: '100%',
-                          height: 130,
-                          objectFit: 'cover',
-                          borderRadius: 2,
+                      <Box sx={{
+                          width: '100%', height: 130, borderRadius: 2, overflow: 'hidden',
                           bgcolor: 'rgba(255,255,255,0.06)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
                         }}
                       >
-                        {!v.image_filename && (
-                          <DirectionsCarIcon sx={{ fontSize: 64, color: 'rgba(255,255,255,0.2)' }} />
-                        )}
+                        {v.image_filename
+                          ? <Box component="img"
+                              src={`${vehicleImageUrl(v.id)}?k=${imgKey}`}
+                              alt={v.name}
+                              sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                            />
+                          : <DirectionsCarIcon sx={{ fontSize: 64, color: 'rgba(255,255,255,0.2)' }} />
+                        }
                       </Box>
 
                       {/* Bouton upload photo */}
