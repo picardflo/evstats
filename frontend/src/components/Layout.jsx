@@ -22,16 +22,18 @@ import SettingsIcon from '@mui/icons-material/Settings'
 import NotificationsIcon from '@mui/icons-material/Notifications'
 import MenuIcon from '@mui/icons-material/Menu'
 import BoltIcon from '@mui/icons-material/Bolt'
+import DirectionsCarIcon from '@mui/icons-material/DirectionsCar'
 import { fetchVersion } from '../api/client'
 
 const DRAWER_WIDTH = 220
 
 const NAV = [
-  { label: 'Dashboard', path: '/dashboard', icon: <DashboardIcon /> },
-  { label: 'Import', path: '/import', icon: <UploadFileIcon /> },
-  { label: 'Sessions', path: '/sessions', icon: <TableRowsIcon /> },
-  { label: 'Alertes', path: '/alerts', icon: <NotificationsIcon /> },
-  { label: 'Paramètres', path: '/settings', icon: <SettingsIcon /> },
+  { label: 'Dashboard',  path: '/dashboard', icon: <DashboardIcon /> },
+  { label: 'Import',     path: '/import',    icon: <UploadFileIcon /> },
+  { label: 'Sessions',   path: '/sessions',  icon: <TableRowsIcon /> },
+  { label: 'Véhicule',   path: '/vehicle',   icon: <DirectionsCarIcon /> },
+  { label: 'Alertes',    path: '/alerts',    icon: <NotificationsIcon /> },
+  { label: 'Paramètres', path: '/settings',  icon: <SettingsIcon /> },
 ]
 
 export default function Layout({ children }) {

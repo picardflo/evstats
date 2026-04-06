@@ -7,6 +7,7 @@ Tables :
   - tariff_config     : tarif actif affiché dans l'UI (singleton id=1, kept for compat)
   - tariff_period     : historique des périodes tarifaires (V2)
   - alert_config      : configuration des alertes de consommation (V2)
+  - vehicle           : véhicules électriques avec specs (V2)
 """
 
 from datetime import datetime, date
@@ -85,6 +86,28 @@ class TariffPeriod(SQLModel, table=True):
     price_hp:   float          # €/kWh Heures Pleines
     label:      str  = Field(default="")  # Libellé optionnel ex: "Révision février 2026"
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class Vehicle(SQLModel, table=True):
+    """
+    Véhicule électrique avec ses spécifications techniques.
+
+    Permet de calculer des métriques au kilomètre :
+      - km rechargés = energy_kwh × 1000 / consumption_wh_per_km
+      - coût/100km   = cost_eur / km × 100
+      - nb "pleins"  = energy_kwh / battery_kwh
+
+    battery_kwh : capacité nette utilisable (ex: LEAF 40kWh = 36 kWh)
+    consumption_wh_per_km : consommation réelle (ex: LEAF ≈ 160 Wh/km)
+    image_filename : nom du fichier dans /app/data/images/ (vide si pas d'image)
+    """
+    id:                    Optional[int] = Field(default=None, primary_key=True)
+    name:                  str                        # Ex: "Nissan LEAF 40 kWh"
+    year:                  Optional[int] = None        # Ex: 2018
+    battery_kwh:           float                       # Capacité nette en kWh
+    consumption_wh_per_km: float                       # Conso réelle en Wh/km
+    image_filename:        str  = Field(default="")    # Nom de fichier image
+    created_at:            datetime = Field(default_factory=datetime.utcnow)
 
 
 class AlertConfig(SQLModel, table=True):

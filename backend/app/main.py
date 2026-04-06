@@ -19,12 +19,19 @@ Endpoints disponibles :
   PUT    /api/alerts                          Met à jour config alertes (V2)
   POST   /api/alerts/check                    Vérifie et envoie alertes si seuil atteint (V2)
   GET    /api/reports/monthly/{year}/{month}  Génère un rapport PDF mensuel (V2)
+  GET    /api/vehicles                        Liste des véhicules (V2)
+  POST   /api/vehicles                        Crée un véhicule (V2)
+  PUT    /api/vehicles/{id}                   Met à jour un véhicule (V2)
+  DELETE /api/vehicles/{id}                   Supprime un véhicule (V2)
+  POST   /api/vehicles/{id}/image             Upload image d'un véhicule (V2)
+  GET    /api/vehicles/{id}/image             Sert l'image d'un véhicule (V2)
   GET    /api/health                          Health check
 """
 
 import csv
 import io
 import httpx
+import mimetypes
 from pathlib import Path
 from collections import defaultdict
 from contextlib import asynccontextmanager
@@ -38,10 +45,13 @@ from pydantic import BaseModel
 from sqlmodel import Session, select, func
 
 from .database import create_db, get_session
-from .models import ChargingSession, ImportLog, TariffConfig, TariffPeriod, AlertConfig
+from .models import ChargingSession, ImportLog, TariffConfig, TariffPeriod, AlertConfig, Vehicle
 from .parser import parse_xlsx
 from .tariff import DEFAULT_PRICE_HC, DEFAULT_PRICE_HP
 from .report import generate_monthly_pdf
+
+# Répertoire de stockage des images véhicules (dans le volume Docker)
+IMAGES_DIR = Path("/app/data/images")
 
 
 # ── Lifecycle ────────────────────────────────────────────────────────────────
@@ -79,6 +89,9 @@ async def lifespan(app: FastAPI):
             db.add(AlertConfig(id=1))
 
         db.commit()
+
+    # Répertoire des images véhicules
+    IMAGES_DIR.mkdir(parents=True, exist_ok=True)
     yield
 
 
@@ -690,6 +703,121 @@ def list_imports(db: Session = Depends(get_session)):
         }
         for l in logs
     ]
+
+
+# ── Véhicules (V2) ───────────────────────────────────────────────────────────
+
+class VehicleOut(BaseModel):
+    id: int
+    name: str
+    year: Optional[int]
+    battery_kwh: float
+    consumption_wh_per_km: float
+    image_filename: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class VehicleIn(BaseModel):
+    name: str
+    year: Optional[int] = None
+    battery_kwh: float       # Capacité nette en kWh (ex: 36 pour la LEAF 40kWh)
+    consumption_wh_per_km: float  # Conso réelle en Wh/km (ex: 160)
+
+
+@app.get("/api/vehicles", response_model=List[VehicleOut])
+def list_vehicles(db: Session = Depends(get_session)):
+    return db.exec(select(Vehicle).order_by(Vehicle.created_at)).all()
+
+
+@app.post("/api/vehicles", response_model=VehicleOut)
+def create_vehicle(body: VehicleIn, db: Session = Depends(get_session)):
+    v = Vehicle(**body.model_dump())
+    db.add(v)
+    db.commit()
+    db.refresh(v)
+    return v
+
+
+@app.put("/api/vehicles/{vehicle_id}", response_model=VehicleOut)
+def update_vehicle(vehicle_id: int, body: VehicleIn, db: Session = Depends(get_session)):
+    v = db.get(Vehicle, vehicle_id)
+    if not v:
+        raise HTTPException(status_code=404, detail="Véhicule introuvable")
+    for field, value in body.model_dump().items():
+        setattr(v, field, value)
+    db.commit()
+    db.refresh(v)
+    return v
+
+
+@app.delete("/api/vehicles/{vehicle_id}")
+def delete_vehicle(vehicle_id: int, db: Session = Depends(get_session)):
+    v = db.get(Vehicle, vehicle_id)
+    if not v:
+        raise HTTPException(status_code=404, detail="Véhicule introuvable")
+    # Supprime l'image associée si elle existe
+    if v.image_filename:
+        img_path = IMAGES_DIR / v.image_filename
+        img_path.unlink(missing_ok=True)
+    db.delete(v)
+    db.commit()
+    return {"ok": True}
+
+
+@app.post("/api/vehicles/{vehicle_id}/image", response_model=VehicleOut)
+async def upload_vehicle_image(
+    vehicle_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_session),
+):
+    """
+    Upload de la photo du véhicule.
+    Formats acceptés : JPEG, PNG, WebP.
+    Le fichier est stocké dans /app/data/images/ sous le nom vehicle_{id}.{ext}.
+    """
+    v = db.get(Vehicle, vehicle_id)
+    if not v:
+        raise HTTPException(status_code=404, detail="Véhicule introuvable")
+
+    # Validation du type MIME
+    allowed = {"image/jpeg", "image/png", "image/webp"}
+    content_type = file.content_type or ""
+    if content_type not in allowed:
+        raise HTTPException(status_code=400, detail="Format accepté : JPEG, PNG ou WebP")
+
+    ext = mimetypes.guess_extension(content_type) or ".jpg"
+    if ext == ".jpe":
+        ext = ".jpg"
+
+    # Supprime l'ancienne image si elle existe
+    if v.image_filename:
+        (IMAGES_DIR / v.image_filename).unlink(missing_ok=True)
+
+    filename = f"vehicle_{vehicle_id}{ext}"
+    (IMAGES_DIR / filename).write_bytes(await file.read())
+
+    v.image_filename = filename
+    db.commit()
+    db.refresh(v)
+    return v
+
+
+@app.get("/api/vehicles/{vehicle_id}/image")
+def get_vehicle_image(vehicle_id: int, db: Session = Depends(get_session)):
+    """Sert l'image du véhicule depuis /app/data/images/."""
+    v = db.get(Vehicle, vehicle_id)
+    if not v or not v.image_filename:
+        raise HTTPException(status_code=404, detail="Pas d'image pour ce véhicule")
+
+    img_path = IMAGES_DIR / v.image_filename
+    if not img_path.exists():
+        raise HTTPException(status_code=404, detail="Fichier image introuvable")
+
+    media_type = mimetypes.guess_type(str(img_path))[0] or "image/jpeg"
+    return StreamingResponse(open(img_path, "rb"), media_type=media_type)
 
 
 @app.get("/api/health")

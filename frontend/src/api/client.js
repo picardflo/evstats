@@ -174,6 +174,39 @@ export function buildPdfReportUrl(year, month) {
   return `/api/reports/monthly/${year}/${month}`
 }
 
+// ── Véhicules (V2) ───────────────────────────────────────────────────────────
+
+export async function fetchVehicles() {
+  const { data } = await api.get('/vehicles')
+  return data
+}
+
+export async function createVehicle(payload) {
+  const { data } = await api.post('/vehicles', payload)
+  return data
+}
+
+export async function updateVehicle(id, payload) {
+  const { data } = await api.put(`/vehicles/${id}`, payload)
+  return data
+}
+
+export async function deleteVehicle(id) {
+  await api.delete(`/vehicles/${id}`)
+}
+
+export async function uploadVehicleImage(id, file) {
+  const form = new FormData()
+  form.append('file', file)
+  const { data } = await api.post(`/vehicles/${id}/image`, form)
+  return data
+}
+
+/** URL directe vers l'image d'un véhicule (utilisé dans <img src=...>) */
+export function vehicleImageUrl(id) {
+  return `/api/vehicles/${id}/image`
+}
+
 // ── Version ───────────────────────────────────────────────────────────────────
 
 export async function fetchVersion() {

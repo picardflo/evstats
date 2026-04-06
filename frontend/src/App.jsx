@@ -15,6 +15,7 @@ import Import from './pages/Import'
 import Sessions from './pages/Sessions'
 import Settings from './pages/Settings'
 import Alerts from './pages/Alerts'
+import Vehicle from './pages/Vehicle'
 
 export default function App() {
   return (
@@ -22,10 +23,11 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/import" element={<Import />} />
-        <Route path="/sessions" element={<Sessions />} />
-        <Route path="/alerts"   element={<Alerts />} />
-        <Route path="/settings" element={<Settings />} />
+        <Route path="/import"    element={<Import />} />
+        <Route path="/sessions"  element={<Sessions />} />
+        <Route path="/vehicle"   element={<Vehicle />} />
+        <Route path="/alerts"    element={<Alerts />} />
+        <Route path="/settings"  element={<Settings />} />
       </Routes>
     </Layout>
   )
