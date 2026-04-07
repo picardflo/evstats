@@ -25,12 +25,9 @@ Structure des paquets :
 Référence de base : https://github.com/Oniric75/evsemasterudp
 """
 
-import logging
 import socket
 import struct
 import time
-
-logger = logging.getLogger(__name__)
 
 HEADER      = b'\x06\x01'
 TAIL        = b'\x0f\x02'
@@ -147,14 +144,10 @@ def test_connection(ip: str, password: str, timeout: int = 20) -> dict:
             except socket.timeout:
                 continue
 
-            print(f"[UDP] reçu {addr[0]}:{addr[1]} len={len(data)} hex={data[:20].hex()}", flush=True)
-
             if addr[0] != ip:
-                print(f"[UDP]   → ignoré (source {addr[0]} ≠ {ip})", flush=True)
                 continue
 
             cmd, _ = _parse_response(data)
-            print(f"[UDP]   → cmd=0x{cmd:04x} (attendu broadcast 0x{CMD_BROADCAST:04x})", flush=True)
             if cmd == CMD_BROADCAST:
                 serial_bytes = _serial_from_packet(data)
                 src_port = addr[1]
@@ -184,7 +177,6 @@ def test_connection(ip: str, password: str, timeout: int = 20) -> dict:
             except socket.timeout:
                 continue
             cmd, _ = _parse_response(data)
-            print(f"[UDP] login response: cmd=0x{cmd:04x} hex={data[:22].hex()}", flush=True)
             if cmd == CMD_LOGIN_OK:
                 login_ok = True
                 break
@@ -313,10 +305,8 @@ def get_status(ip: str, serial_hex: str, password: str,
             try:
                 data, _ = sock.recvfrom(1024)
             except socket.timeout:
-                print("[UDP get_status] timeout recvfrom", flush=True)
                 continue
             cmd, payload = _parse_response(data)
-            print(f"[UDP get_status] reçu cmd=0x{cmd:04x} hex={data[:22].hex()}", flush=True)
             if cmd == CMD_STATUS_RESP:
                 return _parse_status_payload(payload)
 
