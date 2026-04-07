@@ -3,6 +3,9 @@ services:
     build: ./backend
     container_name: evstats-api
     restart: unless-stopped
+    # network_mode: host est nécessaire pour recevoir les broadcasts UDP de la borne
+    # EVSE (port 28376). Le bridge Docker isole les broadcasts LAN.
+    network_mode: host
     volumes:
       - evstats_data:/app/data
       - ./VERSION:/app/VERSION:ro
@@ -15,6 +18,9 @@ services:
       - "8080:80"
     depends_on:
       - evstats-api
+    # Permet à nginx de joindre le backend sur le réseau hôte
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 volumes:
   evstats_data:
