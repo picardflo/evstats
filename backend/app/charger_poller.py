@@ -78,9 +78,12 @@ class ActiveCharge:
     last_poll_time:          Optional[datetime] = None
     last_power_w:            float            = 0.0
     zero_current_count:      int              = 0
-    # Compteur hardware absolu (Wh total vie de la borne) relevé au début de session.
-    # Si disponible, energy_wh = compteur_actuel - energy_counter_start_wh (plus précis).
+    # Compteur hardware absolu (Wh total vie de la borne) relevé au premier poll.
+    # energy_wh = energy_wh_offset + (compteur_actuel - energy_counter_start_wh)
     energy_counter_start_wh: Optional[int]   = None
+    # Énergie déjà accumulée avant que le compteur hardware soit disponible
+    # (ex : valeur restaurée depuis JSON après un restart).
+    energy_wh_offset:        float            = 0.0
 
 
 @dataclass
@@ -145,6 +148,7 @@ def _persist_active_charges():
                 "energy_wh":               c.energy_wh,
                 "last_power_w":            c.last_power_w,
                 "energy_counter_start_wh": c.energy_counter_start_wh,
+                "energy_wh_offset":        c.energy_wh_offset,
             }
             for cid, c in _active_charges.items()
         }
@@ -161,12 +165,15 @@ def _restore_active_charges():
         data = json.loads(_ACTIVE_CHARGES_FILE.read_text())
         for cid_str, d in data.items():
             cid = int(cid_str)
+            energy_wh = d["energy_wh"]
             _active_charges[cid] = ActiveCharge(
                 charger_id=d["charger_id"],
                 start_time=datetime.fromisoformat(d["start_time"]),
-                energy_wh=d["energy_wh"],
+                energy_wh=energy_wh,
                 last_power_w=d.get("last_power_w", 0.0),
                 energy_counter_start_wh=d.get("energy_counter_start_wh"),
+                # Si pas de compteur hardware connu, l'énergie restaurée sert de base
+                energy_wh_offset=d.get("energy_wh_offset", energy_wh if d.get("energy_counter_start_wh") is None else 0.0),
             )
         print(f"[poller] Sessions actives restaurées : {list(_active_charges.keys())}", flush=True)
     except Exception as e:
@@ -246,11 +253,13 @@ def _process_status(charger: ChargerSnapshot, status: dict, poll_time: datetime)
         if counter_wh is not None:
             if charge.energy_counter_start_wh is None:
                 # Premier poll avec compteur disponible → initialiser le référentiel
+                # en préservant l'énergie déjà accumulée (ex: restaurée depuis JSON)
+                charge.energy_wh_offset = charge.energy_wh
                 charge.energy_counter_start_wh = counter_wh
             else:
                 delta = counter_wh - charge.energy_counter_start_wh
                 if delta >= 0:  # ignorer les overflows ou resets de compteur
-                    charge.energy_wh = float(delta)
+                    charge.energy_wh = charge.energy_wh_offset + float(delta)
         else:
             # Repli trapèzes si compteur indisponible
             if charge.last_poll_time:
