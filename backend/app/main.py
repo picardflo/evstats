@@ -62,12 +62,14 @@ from .parser import parse_xlsx
 from .tariff import DEFAULT_PRICE_HC, DEFAULT_PRICE_HP, compute_tariff, TariffRuleConfig, HcWindow
 from .report import generate_monthly_pdf
 from . import udp_client
+from . import charger_poller
 
 # Répertoire de stockage des images véhicules (dans le volume Docker)
 IMAGES_DIR = Path("/app/data/images")
 
-# Verrou asyncio : une seule session UDP à la fois (protocole EVSEMaster)
-_udp_lock = asyncio.Lock()
+# Verrou UDP partagé entre les endpoints manuels et le poller de fond
+# Défini dans charger_poller.py, importé ici pour être utilisé dans les endpoints
+_udp_lock = charger_poller.udp_lock
 
 
 # ── Lifecycle ────────────────────────────────────────────────────────────────
@@ -86,6 +88,8 @@ def _migrate():
         # v1.5.0 : table charger (nouvelle table, créée par create_db — migration no-op)
         # v1.5.1 : colonne image_filename sur charger
         "ALTER TABLE charger ADD COLUMN image_filename TEXT NOT NULL DEFAULT ''",
+        # v1.6.0 : colonne source sur chargingsession
+        "ALTER TABLE chargingsession ADD COLUMN source TEXT NOT NULL DEFAULT 'xlsx'",
     ]
     with engine.connect() as conn:
         for stmt in migrations:
@@ -140,7 +144,11 @@ async def lifespan(app: FastAPI):
 
     # Répertoire des images véhicules
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Démarrage du poller UDP en arrière-plan
+    charger_poller.start_poller()
     yield
+    charger_poller.stop_poller()
 
 
 app = FastAPI(title="EVSE Stats API", lifespan=lifespan)
@@ -265,6 +273,7 @@ class SessionOut(BaseModel):
     hp_kwh: float
     end_status: str
     start_user: str
+    source: str  # "xlsx" ou "udp"
 
     class Config:
         from_attributes = True
@@ -1199,6 +1208,25 @@ async def get_charger_status(charger_id: int, db: Session = Depends(get_session)
         )
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/chargers/live")
+def get_all_chargers_live():
+    """
+    Retourne le statut en cache de toutes les bornes (aucune requête UDP).
+    Mis à jour automatiquement par le poller de fond toutes les ~30s.
+    """
+    return {
+        str(cid): {
+            "voltage":     s.voltage,
+            "current":     s.current,
+            "power_w":     s.power_w,
+            "is_charging": s.is_charging,
+            "updated_at":  s.updated_at.isoformat() if s.updated_at else None,
+            "error":       s.error,
+        }
+        for cid, s in charger_poller.status_cache.items()
+    }
 
 
 @app.get("/api/health")

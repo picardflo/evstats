@@ -389,12 +389,21 @@ Le script conserve 30 jours de backups dans `/srv/docker_data/evstats/backups/`.
 - [x] Chip "Actif" (vert) + contour sur la carte active, chip cliquable "Définir comme actif" sur les autres
 - [x] Premier véhicule créé automatiquement actif
 
-### v1.5.0
+### v1.5.0 / v1.5.1
 - [x] Page Chargeurs : ajout/modification/suppression de bornes EVSE via l'interface
 - [x] Intégration UDP directe avec les bornes Morec/EVSEMaster (protocole port 28376)
 - [x] Test de connexion intégré dans le dialog d'ajout (découverte automatique du numéro de série)
 - [x] Statut temps réel : tension, courant, puissance instantanée (bouton Rafraîchir)
 - [x] Verrou asyncio : une seule session UDP à la fois (protocole EVSEMaster sans sessions persistantes)
+- [x] Photo de borne (upload JPEG/PNG/WebP)
+- [x] Support FQDN en plus d'IP (résolution DNS locale)
+
+### v1.6.0
+- [x] Polling automatique des bornes en arrière-plan (asyncio, toutes les 30s en veille)
+- [x] Détection automatique début/fin de charge (seuil courant > 0.5A)
+- [x] Enregistrement automatique des sessions UDP en base de données (avec calcul HC/HP + coût)
+- [x] Cache statut en mémoire — page Chargeurs auto-rafraîchie sans requête UDP
+- [x] Bannière "Charge en cours" sur le Dashboard (tension/courant/puissance, animation pulse)
 
 ### À venir
 - [ ] Enregistrement automatique des sessions de charge via UDP (sans import XLSX)

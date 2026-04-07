@@ -39,8 +39,9 @@ class ChargingSession(SQLModel, table=True):
     hp_kwh:     float  # Part HP calculée par tariff.py
     cost_eur:   float  # Coût = hc_kwh × price_hc + hp_kwh × price_hp
 
-    end_status: str  # "Pull Plug", "Fix Time", "Power Down", ou hash RFID
-    start_user: str  # "Clock" ou hash RFID
+    end_status: str  # "Pull Plug", "Fix Time", "Power Down", "UDP Auto", ou hash RFID
+    start_user: str  # "Clock", "UDP Auto", ou hash RFID
+    source:     str  = Field(default="xlsx")  # "xlsx" ou "udp" (v1.5.0+)
 
 
 class ImportLog(SQLModel, table=True):

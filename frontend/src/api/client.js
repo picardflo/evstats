@@ -282,6 +282,15 @@ export async function fetchChargerStatus(id) {
   return data
 }
 
+/**
+ * Retourne le statut en cache de toutes les bornes (lu par le poller, pas de requête UDP).
+ * @returns {Promise<{ [chargerId]: { voltage, current, power_w, is_charging, updated_at, error } }>}
+ */
+export async function fetchAllChargersLive() {
+  const { data } = await api.get('/chargers/live')
+  return data
+}
+
 export async function uploadChargerImage(id, file) {
   const form = new FormData()
   form.append('file', file)

@@ -28,7 +28,7 @@ import CheckCircleIcon    from '@mui/icons-material/CheckCircle'
 import PhotoCameraIcon    from '@mui/icons-material/PhotoCamera'
 import {
   fetchChargers, createCharger, updateCharger, deleteCharger,
-  testChargerPreSave, fetchChargerStatus,
+  testChargerPreSave, fetchChargerStatus, fetchAllChargersLive,
   uploadChargerImage, chargerImageUrl,
 } from '../api/client'
 
@@ -414,6 +414,31 @@ export default function Chargers() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  // Auto-refresh du cache poller toutes les 30s
+  useEffect(() => {
+    const refresh = async () => {
+      try {
+        const live = await fetchAllChargersLive()
+        // Convertir { "1": {...} } → { 1: {...} }
+        const parsed = Object.fromEntries(
+          Object.entries(live).map(([k, v]) => [parseInt(k), v])
+        )
+        setStatuses(parsed)
+        // Mettre à jour last_seen dans la liste locale
+        setChargers(cs => cs.map(c => {
+          const s = parsed[c.id]
+          if (s?.updated_at) return { ...c, last_seen: s.updated_at }
+          return c
+        }))
+      } catch {
+        // Silencieux — le poller peut ne pas avoir encore de données
+      }
+    }
+    refresh()
+    const id = setInterval(refresh, 30000)
+    return () => clearInterval(id)
+  }, [])
 
   const handleRefresh = async (charger) => {
     setLoadingStatus(s => ({ ...s, [charger.id]: true }))
