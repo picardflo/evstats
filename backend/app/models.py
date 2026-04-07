@@ -160,9 +160,10 @@ class Charger(SQLModel, table=True):
     src_port:   int      = Field(default=6186)   # Port UDP source de la borne
     model:      str      = Field(default="")     # Modèle (ex: "SQW49")
     firmware:   str      = Field(default="")     # Firmware (ex: "313251.118A0053")
-    is_enabled: bool     = Field(default=True)   # Activer/désactiver le polling
-    last_seen:  Optional[datetime] = None        # Dernière communication réussie
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    is_enabled:     bool     = Field(default=True)   # Activer/désactiver le polling
+    image_filename: str      = Field(default="")     # Nom de fichier dans /app/data/images/
+    last_seen:      Optional[datetime] = None        # Dernière communication réussie
+    created_at:     datetime = Field(default_factory=datetime.utcnow)
 
 
 class AlertConfig(SQLModel, table=True):

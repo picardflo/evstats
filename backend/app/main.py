@@ -84,6 +84,8 @@ def _migrate():
         # v1.4.2 : colonne is_active sur vehicle
         "ALTER TABLE vehicle ADD COLUMN is_active INTEGER NOT NULL DEFAULT 0",
         # v1.5.0 : table charger (nouvelle table, créée par create_db — migration no-op)
+        # v1.5.1 : colonne image_filename sur charger
+        "ALTER TABLE charger ADD COLUMN image_filename TEXT NOT NULL DEFAULT ''",
     ]
     with engine.connect() as conn:
         for stmt in migrations:
@@ -976,16 +978,17 @@ def get_vehicle_image(vehicle_id: int, db: Session = Depends(get_session)):
 # ── Bornes EVSE / UDP (V2) ────────────────────────────────────────────────────
 
 class ChargerOut(BaseModel):
-    id:         int
-    name:       str
-    ip:         str
-    serial:     str
-    src_port:   int
-    model:      str
-    firmware:   str
-    is_enabled: bool
-    last_seen:  Optional[datetime]
-    created_at: datetime
+    id:             int
+    name:           str
+    ip:             str
+    serial:         str
+    src_port:       int
+    model:          str
+    firmware:       str
+    is_enabled:     bool
+    image_filename: str
+    last_seen:      Optional[datetime]
+    created_at:     datetime
 
     class Config:
         from_attributes = True
@@ -993,7 +996,7 @@ class ChargerOut(BaseModel):
 
 class ChargerIn(BaseModel):
     name:       str
-    ip:         str
+    ip:         str       # Accepte IP ou FQDN (ex: morec.home.lan)
     password:   str
     serial:     str      = ""
     src_port:   int      = 6186
@@ -1019,6 +1022,53 @@ class ChargerStatusOut(BaseModel):
 def list_chargers(db: Session = Depends(get_session)):
     """Liste toutes les bornes configurées."""
     return db.exec(select(Charger).order_by(Charger.created_at)).all()
+
+
+@app.post("/api/chargers/{charger_id}/image", response_model=ChargerOut)
+async def upload_charger_image(
+    charger_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_session),
+):
+    """Upload de la photo du chargeur. Formats acceptés : JPEG, PNG, WebP."""
+    c = db.get(Charger, charger_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Borne introuvable")
+
+    allowed = {"image/jpeg", "image/png", "image/webp"}
+    content_type = file.content_type or ""
+    if content_type not in allowed:
+        raise HTTPException(status_code=400, detail="Format accepté : JPEG, PNG ou WebP")
+
+    ext = mimetypes.guess_extension(content_type) or ".jpg"
+    if ext == ".jpe":
+        ext = ".jpg"
+
+    if c.image_filename:
+        (IMAGES_DIR / c.image_filename).unlink(missing_ok=True)
+
+    filename = f"charger_{charger_id}{ext}"
+    (IMAGES_DIR / filename).write_bytes(await file.read())
+
+    c.image_filename = filename
+    db.commit()
+    db.refresh(c)
+    return c
+
+
+@app.get("/api/chargers/{charger_id}/image")
+def get_charger_image(charger_id: int, db: Session = Depends(get_session)):
+    """Sert la photo du chargeur depuis /app/data/images/."""
+    c = db.get(Charger, charger_id)
+    if not c or not c.image_filename:
+        raise HTTPException(status_code=404, detail="Pas d'image pour cette borne")
+
+    img_path = IMAGES_DIR / c.image_filename
+    if not img_path.exists():
+        raise HTTPException(status_code=404, detail="Fichier image introuvable")
+
+    media_type = mimetypes.guess_type(str(img_path))[0] or "image/jpeg"
+    return StreamingResponse(open(img_path, "rb"), media_type=media_type)
 
 
 @app.post("/api/chargers/test", response_model=dict)

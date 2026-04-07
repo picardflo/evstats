@@ -282,6 +282,17 @@ export async function fetchChargerStatus(id) {
   return data
 }
 
+export async function uploadChargerImage(id, file) {
+  const form = new FormData()
+  form.append('file', file)
+  const { data } = await api.post(`/chargers/${id}/image`, form)
+  return data
+}
+
+export function chargerImageUrl(id) {
+  return `/api/chargers/${id}/image`
+}
+
 // ── Version ───────────────────────────────────────────────────────────────────
 
 export async function fetchVersion() {

@@ -3,13 +3,15 @@
  *
  * Fonctionnalités :
  *   - Liste des bornes enregistrées (carte par borne)
+ *   - Photo de la borne (upload JPEG/PNG/WebP)
  *   - Statut temps réel : tension, courant, puissance (bouton Rafraîchir)
  *   - Ajout / modification via dialog avec test de connexion intégré
+ *   - Adresse IP ou FQDN (ex: morec.home.lan)
  *   - Suppression avec confirmation
  */
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import {
-  Box, Typography, Button, Card, CardContent, CardActions,
+  Box, Typography, Button, Card, CardContent, CardActions, CardMedia,
   Chip, Dialog, DialogTitle, DialogContent, DialogActions,
   TextField, IconButton, Tooltip, Alert, CircularProgress,
   Divider, Stack, Switch, FormControlLabel,
@@ -23,9 +25,11 @@ import WifiIcon           from '@mui/icons-material/Wifi'
 import WifiOffIcon        from '@mui/icons-material/WifiOff'
 import BoltIcon           from '@mui/icons-material/Bolt'
 import CheckCircleIcon    from '@mui/icons-material/CheckCircle'
+import PhotoCameraIcon    from '@mui/icons-material/PhotoCamera'
 import {
   fetchChargers, createCharger, updateCharger, deleteCharger,
-  testChargerPreSave, testCharger, fetchChargerStatus,
+  testChargerPreSave, fetchChargerStatus,
+  uploadChargerImage, chargerImageUrl,
 } from '../api/client'
 
 const EMPTY_FORM = {
@@ -43,18 +47,65 @@ function fmtDate(iso) {
 
 // ── Carte d'une borne ─────────────────────────────────────────────────────────
 
-function ChargerCard({ charger, onEdit, onDelete, onRefresh, status, statusLoading }) {
-  const isOnline = !!charger.last_seen
+function ChargerCard({ charger, onEdit, onDelete, onRefresh, onImageUpload, status, statusLoading }) {
+  const fileRef = useRef()
+  const [imgKey, setImgKey] = useState(0)  // force reload image après upload
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    await onImageUpload(charger.id, file)
+    setImgKey(k => k + 1)
+  }
 
   return (
     <Card sx={{
       border: charger.is_enabled ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(255,255,255,0.04)',
       opacity: charger.is_enabled ? 1 : 0.6,
     }}>
+      {/* Photo */}
+      <Box sx={{ position: 'relative' }}>
+        {charger.image_filename ? (
+          <CardMedia
+            component="img"
+            height="160"
+            image={`${chargerImageUrl(charger.id)}?v=${imgKey}`}
+            alt={charger.name}
+            sx={{ objectFit: 'cover' }}
+          />
+        ) : (
+          <Box sx={{
+            height: 100, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            bgcolor: 'rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.06)',
+          }}>
+            <EvStationIcon sx={{ fontSize: 48, color: 'rgba(255,255,255,0.15)' }} />
+          </Box>
+        )}
+        {/* Bouton upload photo */}
+        <Tooltip title="Changer la photo">
+          <IconButton
+            size="small"
+            onClick={() => fileRef.current?.click()}
+            sx={{
+              position: 'absolute', bottom: 6, right: 6,
+              bgcolor: 'rgba(0,0,0,0.6)', '&:hover': { bgcolor: 'rgba(0,0,0,0.85)' },
+            }}
+          >
+            <PhotoCameraIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          style={{ display: 'none' }}
+          onChange={handleFileChange}
+        />
+      </Box>
+
       <CardContent>
         {/* En-tête */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-          <EvStationIcon sx={{ color: 'primary.main', fontSize: 22 }} />
           <Typography variant="h6" fontWeight={600} sx={{ flex: 1 }}>
             {charger.name}
           </Typography>
@@ -70,7 +121,7 @@ function ChargerCard({ charger, onEdit, onDelete, onRefresh, status, statusLoadi
         {/* Infos borne */}
         <Stack spacing={0.5} sx={{ mb: 2 }}>
           <Typography variant="body2" color="text.secondary">
-            IP : <b style={{ color: '#fff' }}>{charger.ip}</b>
+            <b style={{ color: '#fff' }}>{charger.ip}</b>
             {charger.model && <> · {charger.model}</>}
             {charger.firmware && <> · fw {charger.firmware}</>}
           </Typography>
@@ -156,18 +207,18 @@ function ChargerCard({ charger, onEdit, onDelete, onRefresh, status, statusLoadi
 
 function ChargerDialog({ open, onClose, onSave, initial }) {
   const isEdit = !!initial?.id
-  const [form, setForm]           = useState(EMPTY_FORM)
-  const [testing, setTesting]     = useState(false)
-  const [testResult, setTestResult] = useState(null)  // { serial, src_port, voltage, ... }
-  const [testError, setTestError] = useState(null)
-  const [saving, setSaving]       = useState(false)
+  const [form, setForm]             = useState(EMPTY_FORM)
+  const [testing, setTesting]       = useState(false)
+  const [testResult, setTestResult] = useState(null)
+  const [testError, setTestError]   = useState(null)
+  const [saving, setSaving]         = useState(false)
 
   useEffect(() => {
     if (open) {
       setForm(initial ? {
         name:       initial.name,
         ip:         initial.ip,
-        password:   '',   // ne pas pré-remplir le mot de passe
+        password:   '',
         serial:     initial.serial,
         src_port:   initial.src_port,
         model:      initial.model,
@@ -182,7 +233,6 @@ function ChargerDialog({ open, onClose, onSave, initial }) {
   const set = (field) => (e) => {
     const val = e.target.type === 'checkbox' ? e.target.checked : e.target.value
     setForm(f => ({ ...f, [field]: val }))
-    // Réinitialise le résultat du test si IP ou password changent
     if (field === 'ip' || field === 'password') {
       setTestResult(null)
       setTestError(null)
@@ -196,7 +246,6 @@ function ChargerDialog({ open, onClose, onSave, initial }) {
     try {
       const res = await testChargerPreSave({ ip: form.ip, password: form.password })
       setTestResult(res)
-      // Remplir automatiquement serial et src_port
       setForm(f => ({
         ...f,
         serial:   res.serial   || f.serial,
@@ -240,11 +289,12 @@ function ChargerDialog({ open, onClose, onSave, initial }) {
             placeholder="ex : Morec Garage"
           />
           <TextField
-            label="Adresse IP"
+            label="Adresse IP ou hostname"
             value={form.ip}
             onChange={set('ip')}
             fullWidth
-            placeholder="ex : 192.168.11.134"
+            placeholder="ex : 192.168.11.134 ou morec.home.lan"
+            helperText="Adresse IP ou nom DNS local (FQDN)"
           />
           <TextField
             label="Mot de passe (6 chiffres)"
@@ -257,7 +307,7 @@ function ChargerDialog({ open, onClose, onSave, initial }) {
           />
 
           {/* Bouton Test */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
             <Button
               variant="outlined"
               startIcon={testing ? <CircularProgress size={16} /> : <WifiIcon />}
@@ -271,15 +321,11 @@ function ChargerDialog({ open, onClose, onSave, initial }) {
             </Typography>
           </Box>
 
-          {/* Résultat du test */}
           {testError && (
             <Alert severity="error" sx={{ whiteSpace: 'pre-wrap' }}>{testError}</Alert>
           )}
           {testResult && (
-            <Alert
-              severity="success"
-              icon={<CheckCircleIcon />}
-            >
+            <Alert severity="success" icon={<CheckCircleIcon />}>
               <Typography variant="body2" fontWeight={600}>Connexion réussie !</Typography>
               <Typography variant="caption" component="div">
                 Série : <code>{testResult.serial}</code>
@@ -294,7 +340,6 @@ function ChargerDialog({ open, onClose, onSave, initial }) {
 
           <Divider />
 
-          {/* Champs optionnels */}
           <Typography variant="caption" color="text.secondary">
             Champs optionnels (renseignés automatiquement après test)
           </Typography>
@@ -348,14 +393,14 @@ function DeleteDialog({ charger, onClose, onConfirm }) {
 // ── Page principale ───────────────────────────────────────────────────────────
 
 export default function Chargers() {
-  const [chargers, setChargers]         = useState([])
-  const [loading, setLoading]           = useState(true)
-  const [dialogOpen, setDialogOpen]     = useState(false)
-  const [editCharger, setEditCharger]   = useState(null)
-  const [deleteTarget, setDeleteTarget] = useState(null)
-  const [statuses, setStatuses]         = useState({})       // { id: { voltage, current, ... } }
-  const [loadingStatus, setLoadingStatus] = useState({})     // { id: bool }
-  const [error, setError]               = useState(null)
+  const [chargers, setChargers]           = useState([])
+  const [loading, setLoading]             = useState(true)
+  const [dialogOpen, setDialogOpen]       = useState(false)
+  const [editCharger, setEditCharger]     = useState(null)
+  const [deleteTarget, setDeleteTarget]   = useState(null)
+  const [statuses, setStatuses]           = useState({})
+  const [loadingStatus, setLoadingStatus] = useState({})
+  const [error, setError]                 = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -376,7 +421,6 @@ export default function Chargers() {
     try {
       const status = await fetchChargerStatus(charger.id)
       setStatuses(s => ({ ...s, [charger.id]: status }))
-      // Met à jour last_seen localement
       setChargers(cs => cs.map(c => c.id === charger.id
         ? { ...c, last_seen: status.last_seen }
         : c
@@ -405,6 +449,15 @@ export default function Chargers() {
     await load()
   }
 
+  const handleImageUpload = async (id, file) => {
+    try {
+      const updated = await uploadChargerImage(id, file)
+      setChargers(cs => cs.map(c => c.id === id ? updated : c))
+    } catch (err) {
+      setError('Erreur lors de l\'upload de la photo')
+    }
+  }
+
   return (
     <Box>
       {/* En-tête */}
@@ -422,14 +475,12 @@ export default function Chargers() {
         </Button>
       </Box>
 
-      {/* Erreur globale */}
       {error && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
           {error}
         </Alert>
       )}
 
-      {/* Note protocole */}
       <Alert severity="info" sx={{ mb: 3 }} icon={<WifiIcon />}>
         <Typography variant="body2">
           <b>Protocole UDP direct (EVSEMaster)</b> — La borne diffuse un broadcast sur le port 28376.
@@ -437,7 +488,6 @@ export default function Chargers() {
         </Typography>
       </Alert>
 
-      {/* Liste des bornes */}
       {loading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
           <CircularProgress />
@@ -448,13 +498,9 @@ export default function Chargers() {
           border: '1px dashed rgba(255,255,255,0.15)', borderRadius: 2,
         }}>
           <EvStationIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
-          <Typography color="text.secondary">
-            Aucune borne configurée
-          </Typography>
+          <Typography color="text.secondary">Aucune borne configurée</Typography>
           <Button
-            sx={{ mt: 2 }}
-            variant="outlined"
-            startIcon={<AddIcon />}
+            sx={{ mt: 2 }} variant="outlined" startIcon={<AddIcon />}
             onClick={() => { setEditCharger(null); setDialogOpen(true) }}
           >
             Ajouter une borne
@@ -475,12 +521,12 @@ export default function Chargers() {
               onEdit={(ch) => { setEditCharger(ch); setDialogOpen(true) }}
               onDelete={setDeleteTarget}
               onRefresh={handleRefresh}
+              onImageUpload={handleImageUpload}
             />
           ))}
         </Box>
       )}
 
-      {/* Dialogs */}
       <ChargerDialog
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}

@@ -104,6 +104,14 @@ def _parse_status_payload(payload: bytes) -> dict:
     return result
 
 
+def _resolve_host(host: str) -> str:
+    """Résout un hostname ou FQDN en adresse IP. Retourne l'IP telle quelle si déjà numérique."""
+    try:
+        return socket.gethostbyname(host)
+    except socket.gaierror as e:
+        raise RuntimeError(f"Impossible de résoudre '{host}' : {e}") from e
+
+
 def test_connection(ip: str, password: str, timeout: int = 20) -> dict:
     """
     Teste la connexion UDP à une borne EVSE et retourne les informations du périphérique.
@@ -121,6 +129,7 @@ def test_connection(ip: str, password: str, timeout: int = 20) -> dict:
     Raises:
         RuntimeError : si la borne ne répond pas ou si l'authentification échoue
     """
+    resolved_ip    = _resolve_host(ip)
     password_bytes = password.encode('ascii').ljust(6, b'\x00')[:6]
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -144,7 +153,7 @@ def test_connection(ip: str, password: str, timeout: int = 20) -> dict:
             except socket.timeout:
                 continue
 
-            if addr[0] != ip:
+            if addr[0] != resolved_ip:
                 continue
 
             cmd, _ = _parse_response(data)
@@ -155,8 +164,8 @@ def test_connection(ip: str, password: str, timeout: int = 20) -> dict:
 
         if serial_bytes is None:
             raise RuntimeError(
-                f"Aucun broadcast reçu de {ip} dans les {timeout}s. "
-                "Vérifiez l'adresse IP et assurez-vous que l'application "
+                f"Aucun broadcast reçu de {ip} ({resolved_ip}) dans les {timeout}s. "
+                "Vérifiez l'adresse et assurez-vous que l'application "
                 "EVSEMaster est fermée (une seule session UDP à la fois)."
             )
 
@@ -164,7 +173,7 @@ def test_connection(ip: str, password: str, timeout: int = 20) -> dict:
 
         # ── Étape 2 : RequestLogin (0x8002) ──────────────────────────────────
         pkt = _build_packet(serial_bytes, password_bytes, CMD_REQUEST_LOGIN)
-        sock.sendto(pkt, (ip, src_port))
+        sock.sendto(pkt, (resolved_ip, src_port))
 
         # ── Étape 3 : Attendre LoginOK (0x0002) ──────────────────────────────
         sock.settimeout(5)
@@ -190,11 +199,11 @@ def test_connection(ip: str, password: str, timeout: int = 20) -> dict:
 
         # ── Étape 4 : LoginConfirm (0x8001) ──────────────────────────────────
         pkt = _build_packet(serial_bytes, password_bytes, CMD_LOGIN_CONFIRM)
-        sock.sendto(pkt, (ip, src_port))
+        sock.sendto(pkt, (resolved_ip, src_port))
 
         # ── Étape 5 : GetStatus (0x8004) ─────────────────────────────────────
         pkt = _build_packet(serial_bytes, password_bytes, CMD_GET_STATUS)
-        sock.sendto(pkt, (ip, src_port))
+        sock.sendto(pkt, (resolved_ip, src_port))
 
         # ── Étape 6 : Attendre StatusResponse (0x0004) ───────────────────────
         status = {}
@@ -244,6 +253,7 @@ def get_status(ip: str, serial_hex: str, password: str,
     Raises:
         RuntimeError : si la borne ne répond pas
     """
+    resolved_ip    = _resolve_host(ip)
     password_bytes = password.encode('ascii').ljust(6, b'\x00')[:6]
     serial_bytes   = bytes.fromhex(serial_hex)
 
@@ -265,19 +275,19 @@ def get_status(ip: str, serial_hex: str, password: str,
                 data, addr = sock.recvfrom(1024)
             except socket.timeout:
                 continue
-            if addr[0] != ip:
+            if addr[0] != resolved_ip:
                 continue
             cmd, _ = _parse_response(data)
             if cmd == CMD_BROADCAST:
                 actual_src_port = addr[1]
                 break
         else:
-            raise RuntimeError(f"Aucun broadcast reçu de {ip} dans les {timeout}s.")
+            raise RuntimeError(f"Aucun broadcast reçu de {ip} ({resolved_ip}) dans les {timeout}s.")
 
         # Auth
         sock.settimeout(5)
         pkt = _build_packet(serial_bytes, password_bytes, CMD_REQUEST_LOGIN)
-        sock.sendto(pkt, (ip, actual_src_port))
+        sock.sendto(pkt, (resolved_ip, actual_src_port))
 
         login_ok = False
         deadline = time.time() + 8
@@ -295,10 +305,10 @@ def get_status(ip: str, serial_hex: str, password: str,
             raise RuntimeError("Authentification échouée.")
 
         pkt = _build_packet(serial_bytes, password_bytes, CMD_LOGIN_CONFIRM)
-        sock.sendto(pkt, (ip, actual_src_port))
+        sock.sendto(pkt, (resolved_ip, actual_src_port))
 
         pkt = _build_packet(serial_bytes, password_bytes, CMD_GET_STATUS)
-        sock.sendto(pkt, (ip, actual_src_port))
+        sock.sendto(pkt, (resolved_ip, actual_src_port))
 
         deadline = time.time() + 5
         while time.time() < deadline:
