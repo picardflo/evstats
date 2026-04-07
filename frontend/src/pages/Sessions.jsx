@@ -18,6 +18,7 @@ import {
   Grid, CircularProgress, Alert, Button,
 } from '@mui/material'
 import DownloadIcon from '@mui/icons-material/Download'
+import WifiIcon from '@mui/icons-material/Wifi'
 import { fetchSessions, buildExportUrl } from '../api/client'
 
 const STATUS_COLORS = {
@@ -167,12 +168,28 @@ export default function Sessions() {
                       {s.cost_eur.toFixed(3)}
                     </TableCell>
                     <TableCell>
-                      <Chip
-                        label={s.end_status}
-                        color={STATUS_COLORS[s.end_status] || 'default'}
-                        size="small"
-                        variant="outlined"
-                      />
+                      <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                        <Chip
+                          label={s.end_status}
+                          color={STATUS_COLORS[s.end_status] || 'default'}
+                          size="small"
+                          variant="outlined"
+                        />
+                        {s.source === 'udp' && (
+                          <Chip
+                            icon={<WifiIcon sx={{ fontSize: '12px !important' }} />}
+                            label="UDP"
+                            size="small"
+                            sx={{
+                              bgcolor: 'rgba(0,180,216,0.12)',
+                              color: '#00b4d8',
+                              border: '1px solid rgba(0,180,216,0.4)',
+                              fontWeight: 600,
+                              fontSize: '0.65rem',
+                            }}
+                          />
+                        )}
+                      </Box>
                     </TableCell>
                   </TableRow>
                 ))
