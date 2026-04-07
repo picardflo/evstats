@@ -101,7 +101,7 @@ def _parse_status_payload(payload: bytes) -> dict:
         result['current'] = round(raw_i * 0.01, 2)
     if len(payload) >= 9:
         raw_p = struct.unpack('>H', payload[7:9])[0]
-        result['power_w'] = round(raw_p * 0.1, 1)
+        result['power_w'] = float(raw_p)  # valeur déjà en watts
     result['is_charging'] = result.get('current', 0) > 0.1
     return result
 
