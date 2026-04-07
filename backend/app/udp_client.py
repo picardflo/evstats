@@ -182,6 +182,7 @@ def test_connection(ip: str, password: str, timeout: int = 20) -> dict:
             except socket.timeout:
                 continue
             cmd, _ = _parse_response(data)
+            logger.info("Login response: cmd=0x%04x hex=%s", cmd, data[:22].hex())
             if cmd == CMD_LOGIN_OK:
                 login_ok = True
                 break
