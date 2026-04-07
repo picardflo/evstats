@@ -25,9 +25,12 @@ Structure des paquets :
 Référence de base : https://github.com/Oniric75/evsemasterudp
 """
 
+import logging
 import socket
 import struct
 import time
+
+logger = logging.getLogger(__name__)
 
 HEADER      = b'\x06\x01'
 TAIL        = b'\x0f\x02'
@@ -141,10 +144,14 @@ def test_connection(ip: str, password: str, timeout: int = 20) -> dict:
             except socket.timeout:
                 continue
 
+            logger.info("UDP reçu : %s:%s len=%d hex=%s", addr[0], addr[1], len(data), data[:20].hex())
+
             if addr[0] != ip:
+                logger.info("  → ignoré (source %s ≠ %s)", addr[0], ip)
                 continue
 
             cmd, _ = _parse_response(data)
+            logger.info("  → cmd=0x%04x (attendu 0x%04x)", cmd, CMD_BROADCAST)
             if cmd == CMD_BROADCAST:
                 serial_bytes = _serial_from_packet(data)
                 src_port = addr[1]
