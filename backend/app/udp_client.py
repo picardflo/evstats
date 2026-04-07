@@ -82,10 +82,11 @@ def _parse_status_payload(payload: bytes) -> dict:
     Décode le payload de la réponse 0x0004 (statut de charge).
 
     Offsets validés sur borne Morec MC20CAPP :
-      [0]    : byte de statut (0x00 = veille)
+      [0]    : byte de statut (0x01 = en charge, 0x00 = veille)
       [1:3]  : tension (uint16 big-endian, *0.1 → V)
       [3:5]  : courant (uint16 big-endian, *0.01 → A)
-      [9:11] : puissance (uint16 big-endian, *0.1 → W)
+      [5:7]  : inconnu (0x0000 en veille et en charge)
+      [7:9]  : puissance (uint16 big-endian, *0.1 → W)
 
     Note : la température est présente dans le payload mais son offset
     exact nécessite calibration (la formule (raw-20000)*0.01 donne ~400°C
@@ -98,8 +99,8 @@ def _parse_status_payload(payload: bytes) -> dict:
     if len(payload) >= 5:
         raw_i = struct.unpack('>H', payload[3:5])[0]
         result['current'] = round(raw_i * 0.01, 2)
-    if len(payload) >= 11:
-        raw_p = struct.unpack('>H', payload[9:11])[0]
+    if len(payload) >= 9:
+        raw_p = struct.unpack('>H', payload[7:9])[0]
         result['power_w'] = round(raw_p * 0.1, 1)
     result['is_charging'] = result.get('current', 0) > 0.1
     return result
