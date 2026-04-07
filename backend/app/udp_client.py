@@ -86,11 +86,9 @@ def _parse_status_payload(payload: bytes) -> dict:
       [1:3]  : tension (uint16 big-endian, *0.1 → V)
       [3:5]  : courant (uint16 big-endian, *0.01 → A)
       [5:7]  : inconnu (0x0000 en veille et en charge)
-      [7:9]  : puissance (uint16 big-endian, *0.1 → W)
-
-    Note : la température est présente dans le payload mais son offset
-    exact nécessite calibration (la formule (raw-20000)*0.01 donne ~400°C
-    en veille — décalage à confirmer lors d'une session de charge active).
+      [7:9]  : puissance (uint16 big-endian, valeur brute en W)
+      [15:17]: compteur énergie absolu (uint16 big-endian, Wh total vie de la borne)
+               → delta depuis début de session = énergie session courante
     """
     result = {}
     if len(payload) >= 3:
@@ -102,6 +100,8 @@ def _parse_status_payload(payload: bytes) -> dict:
     if len(payload) >= 9:
         raw_p = struct.unpack('>H', payload[7:9])[0]
         result['power_w'] = float(raw_p)  # valeur déjà en watts
+    if len(payload) >= 17:
+        result['energy_counter_wh'] = struct.unpack('>H', payload[15:17])[0]
     result['is_charging'] = result.get('current', 0) > 0.1
     return result
 

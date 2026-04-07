@@ -72,12 +72,15 @@ class ChargerStatusEntry:
 @dataclass
 class ActiveCharge:
     """État d'une session de charge en cours."""
-    charger_id:         int
-    start_time:         datetime
-    energy_wh:          float            = 0.0
-    last_poll_time:     Optional[datetime] = None
-    last_power_w:       float            = 0.0
-    zero_current_count: int              = 0   # lectures consécutives avec I≈0
+    charger_id:              int
+    start_time:              datetime
+    energy_wh:               float            = 0.0
+    last_poll_time:          Optional[datetime] = None
+    last_power_w:            float            = 0.0
+    zero_current_count:      int              = 0
+    # Compteur hardware absolu (Wh total vie de la borne) relevé au début de session.
+    # Si disponible, energy_wh = compteur_actuel - energy_counter_start_wh (plus précis).
+    energy_counter_start_wh: Optional[int]   = None
 
 
 @dataclass
@@ -137,10 +140,11 @@ def _persist_active_charges():
     try:
         data = {
             str(cid): {
-                "charger_id": c.charger_id,
-                "start_time": c.start_time.isoformat(),
-                "energy_wh":  c.energy_wh,
-                "last_power_w": c.last_power_w,
+                "charger_id":              c.charger_id,
+                "start_time":              c.start_time.isoformat(),
+                "energy_wh":               c.energy_wh,
+                "last_power_w":            c.last_power_w,
+                "energy_counter_start_wh": c.energy_counter_start_wh,
             }
             for cid, c in _active_charges.items()
         }
@@ -162,6 +166,7 @@ def _restore_active_charges():
                 start_time=datetime.fromisoformat(d["start_time"]),
                 energy_wh=d["energy_wh"],
                 last_power_w=d.get("last_power_w", 0.0),
+                energy_counter_start_wh=d.get("energy_counter_start_wh"),
             )
         print(f"[poller] Sessions actives restaurées : {list(_active_charges.keys())}", flush=True)
     except Exception as e:
@@ -231,13 +236,26 @@ def _process_status(charger: ChargerSnapshot, status: dict, poll_time: datetime)
         updated_at=poll_time,
     )
 
+    counter_wh: Optional[int] = status.get('energy_counter_wh')
+
     if cid in _active_charges:
         charge = _active_charges[cid]
 
-        # Intégration d'énergie (méthode des trapèzes)
-        if charge.last_poll_time:
-            dt_h = (poll_time - charge.last_poll_time).total_seconds() / 3600
-            charge.energy_wh += (charge.last_power_w + power_w) / 2 * dt_h
+        # Énergie : compteur hardware en priorité (exact même si cycles manqués),
+        # sinon repli sur intégration trapèzes.
+        if counter_wh is not None:
+            if charge.energy_counter_start_wh is None:
+                # Premier poll avec compteur disponible → initialiser le référentiel
+                charge.energy_counter_start_wh = counter_wh
+            else:
+                delta = counter_wh - charge.energy_counter_start_wh
+                if delta >= 0:  # ignorer les overflows ou resets de compteur
+                    charge.energy_wh = float(delta)
+        else:
+            # Repli trapèzes si compteur indisponible
+            if charge.last_poll_time:
+                dt_h = (poll_time - charge.last_poll_time).total_seconds() / 3600
+                charge.energy_wh += (charge.last_power_w + power_w) / 2 * dt_h
 
         charge.last_poll_time = poll_time
         charge.last_power_w   = power_w
@@ -260,6 +278,7 @@ def _process_status(charger: ChargerSnapshot, status: dict, poll_time: datetime)
             start_time=poll_time,
             last_poll_time=poll_time,
             last_power_w=power_w,
+            energy_counter_start_wh=counter_wh,  # None si pas encore dispo
         )
         _persist_active_charges()
 
