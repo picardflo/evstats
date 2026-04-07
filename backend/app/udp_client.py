@@ -77,6 +77,7 @@ def _serial_from_packet(data: bytes) -> bytes:
 
 
 def _parse_status_payload(payload: bytes) -> dict:
+    print(f"[udp] payload status ({len(payload)}B) hex={payload.hex()}", flush=True)
     """
     Décode le payload de la réponse 0x0004 (statut de charge).
 

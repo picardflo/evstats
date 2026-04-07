@@ -175,6 +175,7 @@ def _save_charge_session(charger: ChargerSnapshot, charge: ActiveCharge, end_tim
 # ── Traitement du statut reçu ─────────────────────────────────────────────────
 
 def _process_status(charger: ChargerSnapshot, status: dict, poll_time: datetime):
+    print(f"[poller] Statut borne {charger.id} : {status}", flush=True)
     """Met à jour le cache et gère la détection de sessions."""
     cid     = charger.id
     current = status.get('current') or 0.0
@@ -244,10 +245,17 @@ async def _poll_once(charger: ChargerSnapshot) -> bool:
         return True
 
     except RuntimeError as e:
-        status_cache[charger.id] = ChargerStatusEntry(
-            error=str(e), updated_at=datetime.utcnow(),
-        )
         print(f"[poller] Erreur borne {charger.id} : {e}", flush=True)
+        # Conserver le dernier statut connu — ne pas écraser is_charging sur erreur transitoire
+        prev = status_cache.get(charger.id)
+        status_cache[charger.id] = ChargerStatusEntry(
+            voltage=prev.voltage if prev else None,
+            current=prev.current if prev else None,
+            power_w=prev.power_w if prev else None,
+            is_charging=prev.is_charging if prev else False,
+            updated_at=prev.updated_at if prev else datetime.utcnow(),
+            error=str(e),
+        )
         return False
 
 
