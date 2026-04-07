@@ -1210,6 +1210,30 @@ async def get_charger_status(charger_id: int, db: Session = Depends(get_session)
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.get("/api/chargers/active-charge")
+def get_active_charges():
+    """
+    Retourne les sessions de charge en cours avec énergie cumulée et durée.
+    Alimenté par charger_poller._active_charges (intégration trapèzes) + status_cache.
+    Rafraîchi côté client toutes les ~5s pendant une charge active.
+    """
+    now = datetime.utcnow()
+    result = []
+    for cid, charge in charger_poller._active_charges.items():
+        duration_minutes = round((now - charge.start_time).total_seconds() / 60, 1)
+        energy_kwh = round(charge.energy_wh / 1000, 3)
+        live = charger_poller.status_cache.get(cid)
+        result.append({
+            "charger_id":       cid,
+            "energy_kwh":       energy_kwh,
+            "duration_minutes": duration_minutes,
+            "voltage":          live.voltage  if live else None,
+            "current":          live.current  if live else None,
+            "power_w":          live.power_w  if live else None,
+        })
+    return result
+
+
 @app.get("/api/chargers/live")
 def get_all_chargers_live():
     """

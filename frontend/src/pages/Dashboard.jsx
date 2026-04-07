@@ -30,7 +30,7 @@ import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import BoltIcon from '@mui/icons-material/Bolt'
 import EvStationIcon from '@mui/icons-material/EvStation'
-import { fetchDailyStats, fetchMonthlyStats, fetchHourlyStats, checkAlerts, buildPdfReportUrl, fetchAllChargersLive } from '../api/client'
+import { fetchDailyStats, fetchMonthlyStats, fetchHourlyStats, checkAlerts, buildPdfReportUrl, fetchAllChargersLive, fetchActiveCharges } from '../api/client'
 
 // Plages HC/HP pour le fond du graphique horaire (lun-ven hors mer)
 const HC_HOURS = new Set([0,1,2,3,4,5,6,7,23]) // 23h30→07h30 approximé à l'heure
@@ -137,6 +137,7 @@ export default function Dashboard() {
   const [error, setError] = useState(null)
   const [yearFilter, setYearFilter] = useState('all')
   const [liveStatuses, setLiveStatuses] = useState({})  // { chargerId: status }
+  const [activeChargeDetails, setActiveChargeDetails] = useState([])  // sessions en cours avec énergie+durée
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -170,6 +171,14 @@ export default function Dashboard() {
   }, [])
 
   const activeCharges = Object.values(liveStatuses).filter(s => s.is_charging)
+
+  // Poll des sessions actives toutes les 5s (énergie + durée temps réel)
+  useEffect(() => {
+    const refresh = () => fetchActiveCharges().then(setActiveChargeDetails).catch(() => {})
+    refresh()
+    const id = setInterval(refresh, 5000)
+    return () => clearInterval(id)
+  }, [])
 
   const data = view === 'daily'
     ? allDaily
@@ -268,13 +277,29 @@ export default function Dashboard() {
             <Typography variant="body1" fontWeight={700} color="#06d6a0">
               Charge en cours
             </Typography>
-            {activeCharges.map((s, i) => (
-              <Typography key={i} variant="body2" color="text.secondary">
-                {s.voltage != null ? `${s.voltage} V` : '—'} ·{' '}
-                {s.current != null ? `${s.current} A` : '—'} ·{' '}
-                <b style={{ color: '#fff' }}>{s.power_w != null ? `${(s.power_w / 1000).toFixed(2)} kW` : '—'}</b>
-              </Typography>
-            ))}
+            {activeCharges.map((s, i) => {
+              const detail = activeChargeDetails[i]
+              const durMin = detail ? Math.floor(detail.duration_minutes) : null
+              const durStr = durMin != null
+                ? durMin >= 60
+                  ? `${Math.floor(durMin / 60)}h${String(durMin % 60).padStart(2, '0')}`
+                  : `${durMin}min`
+                : null
+              return (
+                <Typography key={i} variant="body2" color="text.secondary">
+                  {s.voltage != null ? `${s.voltage} V` : '—'} ·{' '}
+                  {s.current != null ? `${s.current} A` : '—'} ·{' '}
+                  <b style={{ color: '#fff' }}>{s.power_w != null ? `${(s.power_w / 1000).toFixed(2)} kW` : '—'}</b>
+                  {detail && (
+                    <>
+                      {' · '}
+                      <b style={{ color: '#06d6a0' }}>{detail.energy_kwh.toFixed(3)} kWh</b>
+                      {durStr && <> · {durStr}</>}
+                    </>
+                  )}
+                </Typography>
+              )
+            })}
           </Box>
           <BoltIcon sx={{
             color: '#06d6a0', fontSize: 32,

@@ -291,6 +291,15 @@ export async function fetchAllChargersLive() {
   return data
 }
 
+/**
+ * Retourne les sessions de charge actives avec énergie cumulée et durée.
+ * @returns {Promise<Array<{ charger_id, energy_kwh, duration_minutes, voltage, current, power_w }>>}
+ */
+export async function fetchActiveCharges() {
+  const { data } = await api.get('/chargers/active-charge')
+  return data
+}
+
 export async function uploadChargerImage(id, file) {
   const form = new FormData()
   form.append('file', file)
