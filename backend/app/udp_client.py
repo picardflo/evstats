@@ -51,8 +51,10 @@ def _build_packet(serial_bytes: bytes, password_bytes: bytes, cmd: int, payload:
     """Construit un paquet UDP conforme au protocole EVSEMaster."""
     key_type = b'\x00'
     body = key_type + serial_bytes + password_bytes + struct.pack('>H', cmd) + payload
-    # length = taille du corps + 4 (checksum 2B + tail 2B)
-    length = struct.pack('>H', len(body) + 4)
+    # length = taille totale du paquet
+    # total = header(2) + length(2) + body + checksum(2) + tail(2) = len(body) + 8
+    total = len(body) + 8
+    length = struct.pack('>H', total)
     raw = HEADER + length + body
     checksum = sum(raw) % 0xFFFF
     return raw + struct.pack('>H', checksum) + TAIL
