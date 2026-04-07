@@ -61,13 +61,14 @@ def _build_packet(serial_bytes: bytes, password_bytes: bytes, cmd: int, payload:
 def _parse_response(data: bytes) -> tuple[int, bytes]:
     """
     Décode un paquet reçu.
-    Structure réponse : header(2) + length(2) + key_type(1) + serial(8) + cmd(2) + payload + checksum(2) + tail(2)
+    Structure : header(2) + length(2) + key_type(1) + serial(8) + password(6) + cmd(2) + payload + checksum(2) + tail(2)
+    Le champ password vaut 0xFF×6 dans les broadcasts et réponses de la borne.
     Returns (cmd, payload).
     """
-    if len(data) < 17:
+    if len(data) < 23:
         return -1, b''
-    cmd = struct.unpack('>H', data[13:15])[0]
-    payload = data[15:-4]
+    cmd = struct.unpack('>H', data[19:21])[0]
+    payload = data[21:-4]
     return cmd, payload
 
 
