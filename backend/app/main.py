@@ -574,7 +574,7 @@ def update_tariff_config(body: TariffConfigIn, db: Session = Depends(get_session
     cfg = db.get(TariffConfig, 1) or TariffConfig(id=1)
     cfg.price_hc = body.price_hc
     cfg.price_hp = body.price_hp
-    cfg.updated_at = datetime.utcnow()
+    cfg.updated_at = datetime.now()
     db.add(cfg)
 
     # Crée automatiquement une période à partir d'aujourd'hui
@@ -617,7 +617,7 @@ def add_tariff_period(body: TariffPeriodIn, db: Session = Depends(get_session)):
         cfg = db.get(TariffConfig, 1) or TariffConfig(id=1)
         cfg.price_hc = body.price_hc
         cfg.price_hp = body.price_hp
-        cfg.updated_at = datetime.utcnow()
+        cfg.updated_at = datetime.now()
         db.add(cfg)
 
     db.commit()
@@ -666,7 +666,7 @@ def update_tariff_rule(body: TariffRuleIn, db: Session = Depends(get_session)):
     rule.full_hc_days = json.dumps(body.full_hc_days)
     rule.hc_windows   = json.dumps([w.model_dump() for w in body.hc_windows])
     rule.label        = body.label
-    rule.updated_at   = datetime.utcnow()
+    rule.updated_at   = datetime.now()
     db.add(rule)
     db.commit()
     db.refresh(rule)
@@ -720,7 +720,7 @@ def update_alert_config(body: AlertConfigIn, db: Session = Depends(get_session))
     alert.threshold_kwh = body.threshold_kwh
     alert.threshold_eur = body.threshold_eur
     alert.webhook_url   = body.webhook_url
-    alert.updated_at    = datetime.utcnow()
+    alert.updated_at    = datetime.now()
     db.add(alert)
     db.commit()
     db.refresh(alert)
@@ -740,7 +740,7 @@ async def check_alerts(db: Session = Depends(get_session)):
     if not alert or not alert.enabled or not alert.webhook_url:
         return {"sent": False, "reason": "Alertes désactivées ou webhook non configuré"}
 
-    current_month = datetime.utcnow().strftime("%Y-%m")
+    current_month = datetime.now().strftime("%Y-%m")
     if alert.last_alert_month == current_month:
         return {"sent": False, "reason": "Alerte déjà envoyée ce mois"}
 
@@ -1164,7 +1164,7 @@ async def test_charger(charger_id: int, db: Session = Depends(get_session)):
         if result.get('serial'):
             c.serial   = result['serial']
             c.src_port = result['src_port']
-            c.last_seen = datetime.utcnow()
+            c.last_seen = datetime.now()
             db.commit()
         return result
     except RuntimeError as e:
@@ -1197,7 +1197,7 @@ async def get_charger_status(charger_id: int, db: Session = Depends(get_session)
             status = await asyncio.to_thread(
                 udp_client.get_status, c.ip, c.serial, c.password, c.src_port
             )
-        c.last_seen = datetime.utcnow()
+        c.last_seen = datetime.now()
         db.commit()
         return ChargerStatusOut(
             voltage=status.get('voltage'),
@@ -1217,7 +1217,7 @@ def get_active_charges():
     Alimenté par charger_poller._active_charges (intégration trapèzes) + status_cache.
     Rafraîchi côté client toutes les ~5s pendant une charge active.
     """
-    now = datetime.utcnow()
+    now = datetime.now()
     result = []
     for cid, charge in charger_poller._active_charges.items():
         duration_minutes = round((now - charge.start_time).total_seconds() / 60, 1)

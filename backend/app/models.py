@@ -48,7 +48,7 @@ class ImportLog(SQLModel, table=True):
     """Historique des fichiers XLSX importés."""
     id: Optional[int] = Field(default=None, primary_key=True)
 
-    imported_at:    datetime = Field(default_factory=datetime.utcnow)
+    imported_at:    datetime = Field(default_factory=datetime.now)
     filename:       str
     total_rows:     int
     new_rows:       int
@@ -64,7 +64,7 @@ class TariffConfig(SQLModel, table=True):
     id:         int      = Field(default=1, primary_key=True)
     price_hc:   float    = Field(default=0.1724)
     price_hp:   float    = Field(default=0.2305)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.now)
 
 
 class TariffPeriod(SQLModel, table=True):
@@ -88,7 +88,7 @@ class TariffPeriod(SQLModel, table=True):
     price_hc:   float          # €/kWh Heures Creuses
     price_hp:   float          # €/kWh Heures Pleines
     label:      str  = Field(default="")  # Libellé optionnel ex: "Révision février 2026"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=datetime.now)
 
 
 class TariffRule(SQLModel, table=True):
@@ -113,7 +113,7 @@ class TariffRule(SQLModel, table=True):
     full_hc_days: str      = Field(default='[2, 5, 6]')
     hc_windows:   str      = Field(default='[{"start_h": 23, "start_m": 30, "end_h": 7, "end_m": 30}]')
     label:        str      = Field(default="EDF HC/HP + Week-end + Mercredi")
-    updated_at:   datetime = Field(default_factory=datetime.utcnow)
+    updated_at:   datetime = Field(default_factory=datetime.now)
 
 
 class Vehicle(SQLModel, table=True):
@@ -136,7 +136,7 @@ class Vehicle(SQLModel, table=True):
     consumption_wh_per_km: float                       # Conso réelle en Wh/km
     image_filename:        str  = Field(default="")    # Nom de fichier image
     is_active:             bool = Field(default=False) # Un seul véhicule actif à la fois
-    created_at:            datetime = Field(default_factory=datetime.utcnow)
+    created_at:            datetime = Field(default_factory=datetime.now)
 
 
 class Charger(SQLModel, table=True):
@@ -164,7 +164,7 @@ class Charger(SQLModel, table=True):
     is_enabled:     bool     = Field(default=True)   # Activer/désactiver le polling
     image_filename: str      = Field(default="")     # Nom de fichier dans /app/data/images/
     last_seen:      Optional[datetime] = None        # Dernière communication réussie
-    created_at:     datetime = Field(default_factory=datetime.utcnow)
+    created_at:     datetime = Field(default_factory=datetime.now)
 
 
 class AlertConfig(SQLModel, table=True):
@@ -186,4 +186,4 @@ class AlertConfig(SQLModel, table=True):
     threshold_eur:    float    = Field(default=0.0)   # 0 = désactivé
     webhook_url:      str      = Field(default="")    # URL webhook de notification
     last_alert_month: str      = Field(default="")    # Format "YYYY-MM"
-    updated_at:       datetime = Field(default_factory=datetime.utcnow)
+    updated_at:       datetime = Field(default_factory=datetime.now)

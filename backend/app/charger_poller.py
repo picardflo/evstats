@@ -297,7 +297,7 @@ async def _poll_once(charger: ChargerSnapshot) -> bool:
                 charger.src_port,
                 15,   # timeout réduit pour le poller
             )
-        poll_time = datetime.utcnow()
+        poll_time = datetime.now()
         _process_status(charger, status, poll_time)
 
         # Mise à jour last_seen
@@ -317,7 +317,7 @@ async def _poll_once(charger: ChargerSnapshot) -> bool:
             current=prev.current if prev else None,
             power_w=prev.power_w if prev else None,
             is_charging=prev.is_charging if prev else False,
-            updated_at=prev.updated_at if prev else datetime.utcnow(),
+            updated_at=prev.updated_at if prev else datetime.now(),
             error=str(e),
         )
         return False
