@@ -9,6 +9,7 @@ Tables :
   - tariff_rule       : règles HC/HP configurables (singleton id=1) (V2)
   - alert_config      : configuration des alertes de consommation (V2)
   - vehicle           : véhicules électriques avec specs (V2)
+  - charger           : bornes de recharge configurées (intégration UDP directe) (V2)
 """
 
 from datetime import datetime, date
@@ -135,6 +136,33 @@ class Vehicle(SQLModel, table=True):
     image_filename:        str  = Field(default="")    # Nom de fichier image
     is_active:             bool = Field(default=False) # Un seul véhicule actif à la fois
     created_at:            datetime = Field(default_factory=datetime.utcnow)
+
+
+class Charger(SQLModel, table=True):
+    """
+    Borne de recharge configurée pour l'intégration UDP directe.
+
+    serial   : numéro de série hex, obtenu automatiquement lors du test de connexion
+    src_port : port source UDP de la borne (typiquement 6186), obtenu lors du test
+    model    : libellé du modèle (saisi manuellement ou récupéré lors du test)
+    firmware : version firmware (optionnel, saisi manuellement)
+
+    Flux UDP :
+      1. Attendre broadcast 0x0001 sur port 28376
+      2. Authentification (0x8002 → 0x0002 → 0x8001)
+      3. Requête statut (0x8004 → 0x0004 : tension, courant, puissance)
+    """
+    id:         Optional[int] = Field(default=None, primary_key=True)
+    name:       str                              # Nom libre ex: "Morec Garage"
+    ip:         str                              # Adresse IP de la borne
+    password:   str                              # Mot de passe 6 chiffres
+    serial:     str      = Field(default="")     # Hex serial (rempli après test)
+    src_port:   int      = Field(default=6186)   # Port UDP source de la borne
+    model:      str      = Field(default="")     # Modèle (ex: "SQW49")
+    firmware:   str      = Field(default="")     # Firmware (ex: "313251.118A0053")
+    is_enabled: bool     = Field(default=True)   # Activer/désactiver le polling
+    last_seen:  Optional[datetime] = None        # Dernière communication réussie
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class AlertConfig(SQLModel, table=True):

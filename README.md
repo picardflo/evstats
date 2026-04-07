@@ -28,6 +28,7 @@ Since Morec / EVSEMaster provides no API, the workflow relies on manual `.xlsx` 
 - Vehicle page: specs, photo, cost per 100 km
 - Hourly frequency chart
 - CSV export, SQLite backup script
+- **Direct UDP integration** with Morec/EVSEMaster chargers (no manual export needed)
 
 ### Screenshots
 
@@ -86,6 +87,13 @@ MIT — see [LICENSE](LICENSE)
 ---
 
 ## Fonctionnalités
+
+### Intégration UDP directe (v1.5.0)
+- Configuration des bornes EVSE via l'interface web (IP, mot de passe)
+- Test de connexion avec découverte automatique du numéro de série
+- Statut temps réel : tension (V), courant (A), puissance (W)
+- Indicateur "En charge" / "En veille"
+- Protocole EVSEMaster reverse-engineered (port UDP 28376)
 
 ### Import des données
 - Import manuel de fichiers `.xlsx` (drag & drop ou sélection)
@@ -381,9 +389,16 @@ Le script conserve 30 jours de backups dans `/srv/docker_data/evstats/backups/`.
 - [x] Chip "Actif" (vert) + contour sur la carte active, chip cliquable "Définir comme actif" sur les autres
 - [x] Premier véhicule créé automatiquement actif
 
+### v1.5.0
+- [x] Page Chargeurs : ajout/modification/suppression de bornes EVSE via l'interface
+- [x] Intégration UDP directe avec les bornes Morec/EVSEMaster (protocole port 28376)
+- [x] Test de connexion intégré dans le dialog d'ajout (découverte automatique du numéro de série)
+- [x] Statut temps réel : tension, courant, puissance instantanée (bouton Rafraîchir)
+- [x] Verrou asyncio : une seule session UDP à la fois (protocole EVSEMaster sans sessions persistantes)
+
 ### À venir
+- [ ] Enregistrement automatique des sessions de charge via UDP (sans import XLSX)
 - [ ] Support du tarif Tempo EDF (Bleu/Blanc/Rouge) — nécessite intégration API RTE pour le calendrier des couleurs de jours
-- [ ] Support multi-chargeurs
 - [ ] Comparaison coût électrique vs thermique (€/100km)
 - [ ] Import automatique via partage de fichier (Nextcloud, etc.)
 
@@ -391,7 +406,8 @@ Le script conserve 30 jours de backups dans `/srv/docker_data/evstats/backups/`.
 
 ## Contraintes connues
 
-- Pas d'API côté borne Morec ni EVSEMaster → dépendance aux exports manuels `.xlsx`
+- L'intégration UDP directe (v1.5.0) permet de contourner les exports manuels, mais une seule session UDP à la fois est possible (l'app EVSEMaster doit être fermée pendant les requêtes). Le protocole ne maintient pas de session persistante.
+- L'export manuel `.xlsx` reste disponible comme méthode d'import pour l'historique existant.
 - Format de colonnes potentiellement variable selon la version EVSEMaster
 - **Tarif Tempo EDF non supporté** : le Tempo repose sur une couleur de jour (Bleu/Blanc/Rouge)
   publiée chaque soir par RTE pour le lendemain, avec des plages HC/HP et des prix différents pour

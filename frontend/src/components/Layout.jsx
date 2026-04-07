@@ -23,6 +23,7 @@ import NotificationsIcon from '@mui/icons-material/Notifications'
 import MenuIcon from '@mui/icons-material/Menu'
 import BoltIcon from '@mui/icons-material/Bolt'
 import DirectionsCarIcon from '@mui/icons-material/DirectionsCar'
+import EvStationIcon from '@mui/icons-material/EvStation'
 import { fetchVersion } from '../api/client'
 
 const DRAWER_WIDTH = 220
@@ -32,6 +33,7 @@ const NAV = [
   { label: 'Import',     path: '/import',    icon: <UploadFileIcon /> },
   { label: 'Sessions',   path: '/sessions',  icon: <TableRowsIcon /> },
   { label: 'Véhicule',   path: '/vehicle',   icon: <DirectionsCarIcon /> },
+  { label: 'Chargeurs',  path: '/chargers',  icon: <EvStationIcon /> },
   { label: 'Alertes',    path: '/alerts',    icon: <NotificationsIcon /> },
   { label: 'Paramètres', path: '/settings',  icon: <SettingsIcon /> },
 ]

@@ -28,9 +28,17 @@ Endpoints disponibles :
   POST   /api/vehicles/{id}/set-active        Définit le véhicule actif (V2)
   POST   /api/vehicles/{id}/image             Upload image d'un véhicule (V2)
   GET    /api/vehicles/{id}/image             Sert l'image d'un véhicule (V2)
+  GET    /api/chargers                        Liste des bornes configurées (V2)
+  POST   /api/chargers                        Ajoute une borne (V2)
+  PUT    /api/chargers/{id}                   Modifie une borne (V2)
+  DELETE /api/chargers/{id}                   Supprime une borne (V2)
+  POST   /api/chargers/test                   Teste une connexion UDP (avant enregistrement)
+  POST   /api/chargers/{id}/test              Teste la connexion d'une borne enregistrée
+  GET    /api/chargers/{id}/status            Statut temps réel d'une borne (V2)
   GET    /api/health                          Health check
 """
 
+import asyncio
 import csv
 import io
 import json
@@ -49,13 +57,17 @@ from pydantic import BaseModel
 from sqlmodel import Session, select, func
 
 from .database import create_db, get_session, engine
-from .models import ChargingSession, ImportLog, TariffConfig, TariffPeriod, TariffRule, AlertConfig, Vehicle
+from .models import ChargingSession, ImportLog, TariffConfig, TariffPeriod, TariffRule, AlertConfig, Vehicle, Charger
 from .parser import parse_xlsx
 from .tariff import DEFAULT_PRICE_HC, DEFAULT_PRICE_HP, compute_tariff, TariffRuleConfig, HcWindow
 from .report import generate_monthly_pdf
+from . import udp_client
 
 # Répertoire de stockage des images véhicules (dans le volume Docker)
 IMAGES_DIR = Path("/app/data/images")
+
+# Verrou asyncio : une seule session UDP à la fois (protocole EVSEMaster)
+_udp_lock = asyncio.Lock()
 
 
 # ── Lifecycle ────────────────────────────────────────────────────────────────
@@ -71,6 +83,7 @@ def _migrate():
         # v1.4.0 : TariffRule (nouvelle table, créée par create_db)
         # v1.4.2 : colonne is_active sur vehicle
         "ALTER TABLE vehicle ADD COLUMN is_active INTEGER NOT NULL DEFAULT 0",
+        # v1.5.0 : table charger (nouvelle table, créée par create_db — migration no-op)
     ]
     with engine.connect() as conn:
         for stmt in migrations:
@@ -958,6 +971,184 @@ def get_vehicle_image(vehicle_id: int, db: Session = Depends(get_session)):
 
     media_type = mimetypes.guess_type(str(img_path))[0] or "image/jpeg"
     return StreamingResponse(open(img_path, "rb"), media_type=media_type)
+
+
+# ── Bornes EVSE / UDP (V2) ────────────────────────────────────────────────────
+
+class ChargerOut(BaseModel):
+    id:         int
+    name:       str
+    ip:         str
+    serial:     str
+    src_port:   int
+    model:      str
+    firmware:   str
+    is_enabled: bool
+    last_seen:  Optional[datetime]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ChargerIn(BaseModel):
+    name:       str
+    ip:         str
+    password:   str
+    serial:     str      = ""
+    src_port:   int      = 6186
+    model:      str      = ""
+    firmware:   str      = ""
+    is_enabled: bool     = True
+
+
+class ChargerTestIn(BaseModel):
+    ip:       str
+    password: str
+
+
+class ChargerStatusOut(BaseModel):
+    voltage:     Optional[float]
+    current:     Optional[float]
+    power_w:     Optional[float]
+    is_charging: bool
+    last_seen:   Optional[datetime]
+
+
+@app.get("/api/chargers", response_model=List[ChargerOut])
+def list_chargers(db: Session = Depends(get_session)):
+    """Liste toutes les bornes configurées."""
+    return db.exec(select(Charger).order_by(Charger.created_at)).all()
+
+
+@app.post("/api/chargers/test", response_model=dict)
+async def test_charger_pre_save(body: ChargerTestIn):
+    """
+    Teste la connexion UDP à une borne AVANT de l'enregistrer.
+    Retourne le numéro de série et le statut si la connexion réussit.
+
+    L'app EVSEMaster doit être fermée pendant ce test.
+    """
+    if _udp_lock.locked():
+        raise HTTPException(
+            status_code=409,
+            detail="Une session UDP est déjà en cours. Réessayez dans quelques secondes."
+        )
+    try:
+        async with _udp_lock:
+            result = await asyncio.to_thread(
+                udp_client.test_connection, body.ip, body.password
+            )
+        return result
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/chargers", response_model=ChargerOut)
+def create_charger(body: ChargerIn, db: Session = Depends(get_session)):
+    """Enregistre une nouvelle borne."""
+    charger = Charger(
+        name=body.name,
+        ip=body.ip,
+        password=body.password,
+        serial=body.serial,
+        src_port=body.src_port,
+        model=body.model,
+        firmware=body.firmware,
+        is_enabled=body.is_enabled,
+    )
+    db.add(charger)
+    db.commit()
+    db.refresh(charger)
+    return charger
+
+
+@app.put("/api/chargers/{charger_id}", response_model=ChargerOut)
+def update_charger(charger_id: int, body: ChargerIn, db: Session = Depends(get_session)):
+    c = db.get(Charger, charger_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Borne introuvable")
+    for field in ("name", "ip", "password", "serial", "src_port", "model", "firmware", "is_enabled"):
+        setattr(c, field, getattr(body, field))
+    db.commit()
+    db.refresh(c)
+    return c
+
+
+@app.delete("/api/chargers/{charger_id}")
+def delete_charger(charger_id: int, db: Session = Depends(get_session)):
+    c = db.get(Charger, charger_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Borne introuvable")
+    db.delete(c)
+    db.commit()
+    return {"ok": True}
+
+
+@app.post("/api/chargers/{charger_id}/test", response_model=dict)
+async def test_charger(charger_id: int, db: Session = Depends(get_session)):
+    """Teste la connexion UDP d'une borne enregistrée."""
+    c = db.get(Charger, charger_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Borne introuvable")
+    if _udp_lock.locked():
+        raise HTTPException(
+            status_code=409,
+            detail="Une session UDP est déjà en cours. Réessayez dans quelques secondes."
+        )
+    try:
+        async with _udp_lock:
+            result = await asyncio.to_thread(
+                udp_client.test_connection, c.ip, c.password
+            )
+        # Met à jour serial et src_port si obtenus
+        if result.get('serial'):
+            c.serial   = result['serial']
+            c.src_port = result['src_port']
+            c.last_seen = datetime.utcnow()
+            db.commit()
+        return result
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/chargers/{charger_id}/status", response_model=ChargerStatusOut)
+async def get_charger_status(charger_id: int, db: Session = Depends(get_session)):
+    """
+    Récupère le statut temps réel d'une borne (tension, courant, puissance).
+    Effectue une session UDP complète (auth + requête statut).
+    """
+    c = db.get(Charger, charger_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Borne introuvable")
+    if not c.is_enabled:
+        raise HTTPException(status_code=400, detail="Borne désactivée")
+    if not c.serial:
+        raise HTTPException(
+            status_code=400,
+            detail="Numéro de série inconnu — testez d'abord la connexion."
+        )
+    if _udp_lock.locked():
+        raise HTTPException(
+            status_code=409,
+            detail="Une session UDP est déjà en cours. Réessayez dans quelques secondes."
+        )
+    try:
+        async with _udp_lock:
+            status = await asyncio.to_thread(
+                udp_client.get_status, c.ip, c.serial, c.password, c.src_port
+            )
+        c.last_seen = datetime.utcnow()
+        db.commit()
+        return ChargerStatusOut(
+            voltage=status.get('voltage'),
+            current=status.get('current'),
+            power_w=status.get('power_w'),
+            is_charging=status.get('is_charging', False),
+            last_seen=c.last_seen,
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.get("/api/health")

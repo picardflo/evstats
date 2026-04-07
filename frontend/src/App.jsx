@@ -5,6 +5,9 @@
  *   /dashboard → Dashboard (graphiques + KPIs)
  *   /import    → Import XLSX
  *   /sessions  → Tableau des sessions + export CSV
+ *   /vehicle   → Véhicule(s) électrique(s)
+ *   /chargers  → Bornes EVSE (intégration UDP directe)
+ *   /alerts    → Configuration des alertes
  *   /settings  → Configuration des tarifs EDF
  */
 import React from 'react'
@@ -16,6 +19,7 @@ import Sessions from './pages/Sessions'
 import Settings from './pages/Settings'
 import Alerts from './pages/Alerts'
 import Vehicle from './pages/Vehicle'
+import Chargers from './pages/Chargers'
 
 export default function App() {
   return (
@@ -26,6 +30,7 @@ export default function App() {
         <Route path="/import"    element={<Import />} />
         <Route path="/sessions"  element={<Sessions />} />
         <Route path="/vehicle"   element={<Vehicle />} />
+        <Route path="/chargers"  element={<Chargers />} />
         <Route path="/alerts"    element={<Alerts />} />
         <Route path="/settings"  element={<Settings />} />
       </Routes>
