@@ -313,8 +313,10 @@ def get_status(ip: str, serial_hex: str, password: str,
             try:
                 data, _ = sock.recvfrom(1024)
             except socket.timeout:
+                print("[UDP get_status] timeout recvfrom", flush=True)
                 continue
             cmd, payload = _parse_response(data)
+            print(f"[UDP get_status] reçu cmd=0x{cmd:04x} hex={data[:22].hex()}", flush=True)
             if cmd == CMD_STATUS_RESP:
                 return _parse_status_payload(payload)
 
