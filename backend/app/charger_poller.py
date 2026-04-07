@@ -24,7 +24,6 @@ Détection fin de session :
 
 import asyncio
 import json
-import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, Optional
@@ -35,8 +34,6 @@ from .database import engine
 from .models import Charger, ChargingSession, TariffPeriod, TariffRule
 from .tariff import TariffRuleConfig, HcWindow, compute_tariff, DEFAULT_PRICE_HC, DEFAULT_PRICE_HP
 from . import udp_client
-
-logger = logging.getLogger(__name__)
 
 
 # ── Seuils ────────────────────────────────────────────────────────────────────
@@ -135,8 +132,7 @@ def _save_charge_session(charger: ChargerSnapshot, charge: ActiveCharge, end_tim
     """Enregistre une session de charge UDP terminée en base de données."""
     energy_kwh = round(charge.energy_wh / 1000, 4)
     if energy_kwh < 0.01:
-        logger.info("[poller] Session trop courte (%.4f kWh) sur borne %d — ignorée",
-                    energy_kwh, charger.id)
+        print(f"[poller] Session trop courte ({energy_kwh:.4f} kWh) sur borne {charger.id} — ignorée", flush=True)
         return
 
     duration_minutes = round((end_time - charge.start_time).total_seconds() / 60, 1)
@@ -147,7 +143,7 @@ def _save_charge_session(charger: ChargerSnapshot, charge: ActiveCharge, end_tim
             select(ChargingSession).where(ChargingSession.record_id == record_id)
         ).first()
         if existing:
-            logger.info("[poller] Session %s déjà enregistrée — ignorée", record_id)
+            print(f"[poller] Session {record_id} déjà enregistrée — ignorée", flush=True)
             return
 
         rule_config   = _get_tariff_rule_config(db)
@@ -171,11 +167,9 @@ def _save_charge_session(charger: ChargerSnapshot, charge: ActiveCharge, end_tim
         )
         db.add(session)
         db.commit()
-        logger.info(
-            "[poller] Session enregistrée : borne=%s %s→%s %.3f kWh %.4f €",
-            charger.name, charge.start_time.strftime('%H:%M'),
-            end_time.strftime('%H:%M'), energy_kwh, cost_eur,
-        )
+        print(f"[poller] Session enregistrée : borne={charger.name} "
+              f"{charge.start_time.strftime('%H:%M')}→{end_time.strftime('%H:%M')} "
+              f"{energy_kwh:.3f} kWh {cost_eur:.4f} €", flush=True)
 
 
 # ── Traitement du statut reçu ─────────────────────────────────────────────────
@@ -208,14 +202,14 @@ def _process_status(charger: ChargerSnapshot, status: dict, poll_time: datetime)
         if current <= CHARGE_END_A:
             charge.zero_current_count += 1
             if charge.zero_current_count >= CHARGE_END_CONFIRMS:
-                logger.info("[poller] Fin de charge confirmée sur borne %d (%.3f Wh)", cid, charge.energy_wh)
+                print(f"[poller] Fin de charge confirmée sur borne {cid} ({charge.energy_wh:.3f} Wh)", flush=True)
                 _save_charge_session(charger, charge, poll_time)
                 del _active_charges[cid]
         else:
             charge.zero_current_count = 0
 
     elif current > CHARGE_START_A:
-        logger.info("[poller] Début de charge détecté sur borne %d (%.2f A)", cid, current)
+        print(f"[poller] Début de charge détecté sur borne {cid} ({current:.2f} A)", flush=True)
         _active_charges[cid] = ActiveCharge(
             charger_id=cid,
             start_time=poll_time,
@@ -253,16 +247,19 @@ async def _poll_once(charger: ChargerSnapshot) -> bool:
         status_cache[charger.id] = ChargerStatusEntry(
             error=str(e), updated_at=datetime.utcnow(),
         )
-        logger.debug("[poller] Erreur borne %d : %s", charger.id, e)
+        print(f"[poller] Erreur borne {charger.id} : {e}", flush=True)
         return False
 
 
 # ── Boucle principale ─────────────────────────────────────────────────────────
 
 async def _poller_loop():
-    logger.info("[poller] Démarrage du poller UDP")
+    print("[poller] Démarrage du poller UDP", flush=True)
+    cycle = 0
     while True:
         try:
+            cycle += 1
+            print(f"[poller] Cycle {cycle}", flush=True)
             # Charger les bornes activées avec serial connu
             with Session(engine) as db:
                 rows = db.exec(
@@ -291,10 +288,12 @@ async def _poller_loop():
                 await asyncio.sleep(sleep_s)
 
         except asyncio.CancelledError:
-            logger.info("[poller] Arrêt du poller UDP")
+            print("[poller] Arrêt du poller UDP", flush=True)
             return
         except Exception as e:
-            logger.exception("[poller] Erreur inattendue : %s", e)
+            import traceback
+            print(f"[poller] Erreur inattendue : {e}", flush=True)
+            traceback.print_exc()
             await asyncio.sleep(30)
 
 
@@ -304,7 +303,7 @@ def start_poller():
     """Démarre la boucle de polling en arrière-plan (appeler dans le lifespan FastAPI)."""
     global _poller_task
     _poller_task = asyncio.create_task(_poller_loop())
-    logger.info("[poller] Tâche créée")
+    print("[poller] Tâche créée", flush=True)
 
 
 def stop_poller():
