@@ -2,22 +2,28 @@
 
 > 🇬🇧 **English summary below** — [Jump to English section](#english)
 
-Interface web de visualisation et d'analyse des sessions de charge issues de l'application **EVSEMaster**, via import de fichiers Excel (.xlsx).
+Interface web de visualisation et d'analyse des sessions de charge pour bornes **Morec / EVSEMaster**.
 
-En l'absence d'API fournie par la borne Morec ou l'application EVSEMaster, cette solution repose sur des exports manuels réguliers.
+Deux modes d'acquisition des données :
+- **UDP direct** (v1.5+) : connexion temps réel à la borne, enregistrement automatique des sessions
+- **Import XLSX** : import manuel des exports EVSEMaster (compatible avec l'historique existant)
 
 ---
 
 <a name="english"></a>
 ## 🇬🇧 English
 
-**EVSE Stats** is a self-hosted web dashboard for visualising EV charging sessions exported from the **EVSEMaster** app (used with Morec EV wallboxes).
+**EVSE Stats** is a self-hosted web dashboard for visualising EV charging sessions from **Morec / EVSEMaster** wallboxes.
 
-Since Morec / EVSEMaster provides no API, the workflow relies on manual `.xlsx` exports from the mobile app.
+Two data acquisition modes are supported:
+- **Direct UDP** (v1.5+): real-time connection to the charger via the EVSEMaster UDP protocol (port 28376), automatic session recording — no manual export needed.
+- **XLSX import**: manual import of EVSEMaster `.xlsx` exports — compatible with existing history.
 
-> The HC/HP tariff split targets **French EDF contracts**. Rules are fully configurable from the Settings page (full-HC days, time windows). Other structures — plain HC/HP without Wednesday or weekends, two HC windows per day, etc. — are supported. The **Tempo** tariff (3-tier: Blue/White/Red days published daily by RTE) is not yet supported as it requires a live external API for the day-colour calendar.
+> The HC/HP tariff split targets **French EDF contracts**. Rules are fully configurable from the Settings page (full-HC days, time windows). The **Tempo** tariff (3-tier: Blue/White/Red days published daily by RTE) is not yet supported as it requires a live external API.
 
 ### Features
+- Direct UDP integration — real-time voltage, current, power, automatic session recording
+- Live charge banner: energy consumed (kWh) + elapsed duration updated every 5 s
 - Import `.xlsx` exports with automatic deduplication
 - HC/HP cost calculation (minute-by-minute session splitting)
 - **Configurable HC/HP rules**: full-HC days, multiple time windows — adapts to any French EDF contract
@@ -28,7 +34,6 @@ Since Morec / EVSEMaster provides no API, the workflow relies on manual `.xlsx` 
 - Vehicle page: specs, photo, cost per 100 km
 - Hourly frequency chart
 - CSV export, SQLite backup script
-- **Direct UDP integration** with Morec/EVSEMaster chargers (no manual export needed)
 
 ### Screenshots
 
@@ -88,40 +93,55 @@ MIT — see [LICENSE](LICENSE)
 
 ## Fonctionnalités
 
-### Intégration UDP directe (v1.5.0)
-- Configuration des bornes EVSE via l'interface web (IP, mot de passe)
+### Intégration UDP directe (v1.5+)
+
+- Page **Chargeurs** : ajout/modification/suppression de bornes via l'interface
+- Support IP ou FQDN (résolution DNS locale)
 - Test de connexion avec découverte automatique du numéro de série
-- Statut temps réel : tension (V), courant (A), puissance (W)
-- Indicateur "En charge" / "En veille"
-- Protocole EVSEMaster reverse-engineered (port UDP 28376)
+- Upload photo de la borne
+- Statut temps réel : tension (V), courant (A), puissance (kW) via bouton Rafraîchir
+- **Polling automatique** toutes les 30 s en veille, continu pendant la charge
+- **Détection automatique** début/fin de session (seuil > 0.5 A, 3 lectures consécutives à 0 pour confirmer)
+- **Enregistrement automatique** des sessions terminées en base (calcul HC/HP + coût)
+- **Bannière "Charge en cours"** sur le Dashboard : tension · courant · puissance · énergie · durée (rafraîchi toutes les 5 s)
+- **Persistance restart-proof** : l'état de la session active (start_time + énergie) survit aux redémarrages du backend
 
 ### Import des données
+
 - Import manuel de fichiers `.xlsx` (drag & drop ou sélection)
 - Déduplication automatique des sessions (basée sur `Numéro d'enregistrement`)
 - Historique des imports (date, fichier, nouvelles sessions, doublons)
 
 ### Calcul tarifaire
+
 - Répartition HC / HP au niveau de la minute pour chaque session
-- Gestion des sessions chevauchant plusieurs plages tarifaires (ex : mardi 23h → mercredi 08h)
+- Gestion des sessions chevauchant plusieurs plages tarifaires
 - Tarifs EDF éditables via l'interface (sans redéploiement)
+- Historique des périodes tarifaires avec `valid_from` (bon tarif selon la date de la session)
 - Recalcul des coûts sur toutes les sessions existantes en un clic
 
 ### Dashboard
+
 - **KPIs** : sessions, énergie, HC, HP, coût total, coût moyen/session, coût effectif c€/kWh, économies réalisées vs 100% HP
 - **Tendances** mois N vs mois N-1 (↑↓ avec %)
-- **Graphiques** : consommation HC/HP empilée, coût réel + économies, durée de charge
+- **Graphiques** : consommation HC/HP empilée, coût réel + économies, durée de charge, fréquence horaire
 - **Camembert** répartition HC/HP
 - **Vues** : 30 jours, journalière, mensuelle
 - **Classement des mois** avec % HC, coût moyen/session, économies
+- **Récapitulatif annuel**
 
 ### Sessions
+
 - Tableau paginé avec filtres (statut de fin, plage de dates)
+- Chip visuel sur les sessions enregistrées automatiquement via UDP
 - Export CSV des sessions filtrées
 
 ### Paramètres
+
 - Édition des tarifs HC et HP (en c€/kWh)
 - Règles HC/HP configurables : jours entièrement HC, plages horaires (plusieurs fenêtres possibles)
 - Recalcul HC/HP + coûts sur l'historique complet en un clic
+- Alertes consommation mensuelle (seuil kWh / €, webhook ntfy/Slack/Discord)
 
 ---
 
@@ -156,36 +176,49 @@ MIT — see [LICENSE](LICENSE)
 
 ```
 evstats/
-├── backend/                   # API Python FastAPI
+├── backend/
 │   ├── app/
-│   │   ├── main.py            # Endpoints FastAPI
-│   │   ├── models.py          # Modèles SQLModel (ChargingSession, ImportLog, TariffConfig)
-│   │   ├── database.py        # Connexion SQLite
-│   │   ├── parser.py          # Parsing XLSX → ParsedSession
-│   │   └── tariff.py          # Calcul HC/HP (découpage minute-à-minute)
+│   │   ├── main.py              # Endpoints FastAPI + lifespan (démarrage poller)
+│   │   ├── models.py            # Modèles SQLModel (ChargingSession, Charger, ...)
+│   │   ├── database.py          # Connexion SQLite
+│   │   ├── parser.py            # Parsing XLSX → ParsedSession
+│   │   ├── tariff.py            # Calcul HC/HP (découpage minute-à-minute)
+│   │   ├── udp_client.py        # Protocole UDP EVSEMaster (port 28376)
+│   │   └── charger_poller.py    # Poller asyncio : cache statut + détection sessions
+│   ├── migrate_utc_to_paris.py  # Migration one-shot : correction timezone UTC→Paris
 │   ├── requirements.txt
 │   └── Dockerfile
-├── frontend/                  # UI React + Vite
+├── frontend/
 │   ├── src/
-│   │   ├── api/client.js      # Appels axios vers /api
+│   │   ├── api/client.js        # Appels axios vers /api
 │   │   ├── components/
-│   │   │   └── Layout.jsx     # Sidebar + navigation
+│   │   │   └── Layout.jsx       # Sidebar + navigation
 │   │   └── pages/
-│   │       ├── Dashboard.jsx  # Graphiques + KPIs
-│   │       ├── Import.jsx     # Drag & drop xlsx
-│   │       ├── Sessions.jsx   # Tableau filtrable + export CSV
-│   │       └── Settings.jsx   # Configuration des tarifs
+│   │       ├── Dashboard.jsx    # Graphiques + KPIs + bannière charge en cours
+│   │       ├── Chargers.jsx     # Gestion des bornes + statut temps réel
+│   │       ├── Import.jsx       # Drag & drop xlsx
+│   │       ├── Sessions.jsx     # Tableau filtrable + export CSV
+│   │       ├── Vehicle.jsx      # Véhicule actif + KPIs/km
+│   │       └── Settings.jsx     # Configuration tarifs + règles HC/HP + alertes
 │   ├── package.json
 │   ├── vite.config.js
 │   ├── nginx.conf
 │   └── Dockerfile
-├── caddy/
-│   └── Caddyfile              # Bloc à ajouter au Caddy existant
 ├── scripts/
-│   └── backup.sh              # Backup quotidien SQLite (cron)
+│   └── backup.sh                # Backup quotidien SQLite (cron)
 ├── docker-compose.yml
-├── VERSION                    # Version unique de l'application (ex: 1.2.0)
+├── VERSION                      # Version unique (lue par backend + frontend)
 └── .gitignore
+```
+
+### Données persistantes (volume Docker)
+
+```
+/app/data/                       # Monté depuis /srv/docker_data/evstats/ sur la VM
+├── evstats.db                   # Base SQLite
+├── active_charges.json          # Sessions UDP en cours (persistance restart)
+├── charger_images/              # Photos des bornes
+└── vehicle_images/              # Photos des véhicules
 ```
 
 ### Stack
@@ -200,68 +233,93 @@ evstats/
 
 ---
 
+## Protocole UDP EVSEMaster
+
+Le backend communique directement avec les bornes Morec via le protocole UDP propriétaire EVSEMaster (reverse-engineered depuis [evsemasterudp](https://github.com/Oniric75/evsemasterudp)).
+
+**Port** : 28376 (écoute locale, la borne broadcast vers ce port)
+
+**Flow d'authentification** :
+```
+Borne  → broadcast 0x0001 (~toutes les 5s)
+Client → RequestLogin 0x8002
+Borne  → LoginOK 0x0002
+Client → LoginConfirm 0x8001
+Client → GetStatus 0x8004
+Borne  → StatusResponse 0x0004
+```
+
+**Payload StatusResponse (borne Morec MC20CAPP, offsets validés)** :
+
+| Offset | Type | Facteur | Valeur |
+|---|---|---|---|
+| [1:3] | uint16 BE | ×0.1 | Tension (V) |
+| [3:5] | uint16 BE | ×0.01 | Courant (A) |
+| [7:9] | uint16 BE | ×1.0 | Puissance (W) |
+| [15:17] | uint16 BE | ×1.0 | Compteur énergie absolu (Wh, total vie de la borne) |
+
+> **Contrainte** : une seule session UDP à la fois. L'application EVSEMaster mobile doit être fermée pendant les requêtes du poller. Le verrou `asyncio.Lock` partagé empêche les requêtes manuelles (bouton Rafraîchir) et le poller de s'exécuter simultanément.
+
+---
+
 ## Gestion des versions
 
-La version de l'application est définie dans un **unique fichier `VERSION`** à la racine du repo. C'est la seule source de vérité — backend et frontend lisent la même valeur.
+La version est définie dans un **unique fichier `VERSION`** à la racine du repo.
 
-```
-evstats/
-└── VERSION        # ex: 1.2.0
-```
-
-- Le **backend** lit ce fichier depuis le filesystem (monté en read-only via `docker-compose.yml`) et l'expose via `GET /api/version`.
-- Le **frontend** interroge cet endpoint au démarrage et affiche la version dans le footer de la sidebar (`EVSE Stats v1.2.0`).
-
-Aucune duplication de version dans `package.json`, `pyproject.toml` ou ailleurs.
+- Le **backend** lit ce fichier et l'expose via `GET /api/version`
+- Le **frontend** interroge cet endpoint et affiche la version dans le footer
 
 ### Incrémenter la version
 
 ```bash
-# 1. Mettre à jour le fichier
-echo "1.3.0" > VERSION
-
-# 2. Committer et pousser
-git add VERSION && git commit -m "chore: bump version 1.3.0"
+echo "1.7.0" > VERSION
+git add VERSION && git commit -m "chore: bump version 1.7.0"
 git push
-
-# 3. Déployer sur la VM
+# Sur la VM :
 git pull && docker compose up -d --build
 ```
-
-Le frontend affiche automatiquement la nouvelle version après le redéploiement, sans aucun autre changement.
 
 ---
 
 ## Modèle de données
 
-### `charging_sessions`
+### `chargingsession`
 
 | Champ | Type | Description |
 |---|---|---|
 | id | INTEGER PK | Identifiant interne |
-| record_id | TEXT UNIQUE | Numéro d'enregistrement EVSEMaster (clé de déduplication) |
-| charger_id | TEXT | Numéro de chargeur |
-| start_time | DATETIME | Début de session |
-| end_time | DATETIME | Fin de session |
-| duration_minutes | FLOAT | Durée (fournie par EVSEMaster) |
+| record_id | TEXT UNIQUE | Clé de déduplication (EVSEMaster ou `UDP-{id}-{timestamp}`) |
+| charger_id | TEXT | Nom de la borne |
+| start_time | DATETIME | Début de session (heure locale Europe/Paris) |
+| end_time | DATETIME | Fin de session (heure locale Europe/Paris) |
+| duration_minutes | FLOAT | Durée en minutes |
 | energy_kwh | FLOAT | Énergie consommée |
 | hc_kwh | FLOAT | Part HC (calculée) |
 | hp_kwh | FLOAT | Part HP (calculée) |
-| cost_eur | FLOAT | Coût calculé (hc_kwh × prix_HC + hp_kwh × prix_HP) |
-| end_status | TEXT | Motif de fin : Pull Plug, Fix Time, Power Down, ou hash RFID |
-| start_user | TEXT | Initiateur : Clock ou hash RFID |
+| cost_eur | FLOAT | Coût calculé |
+| end_status | TEXT | Motif de fin : Pull Plug / Fix Time / Power Down / UDP Auto |
+| start_user | TEXT | Initiateur : Clock / RFID / UDP Auto |
+| source | TEXT | `xlsx` (import manuel) ou `udp` (enregistrement automatique) |
 
-### `import_log`
+### `charger`
 
-Historique des imports : fichier, date, nombre de nouvelles sessions et doublons.
-
-### `tariff_config`
-
-Un seul enregistrement (id=1) contenant les prix HC et HP actifs, mis à jour via l'interface.
+| Champ | Type | Description |
+|---|---|---|
+| id | INTEGER PK | Identifiant interne |
+| name | TEXT | Nom affiché |
+| ip | TEXT | Adresse IP ou FQDN |
+| password | TEXT | Mot de passe 6 chiffres |
+| serial | TEXT | Numéro de série hex (découvert lors du test de connexion) |
+| src_port | INTEGER | Port source de la borne (défaut 6186) |
+| is_enabled | BOOLEAN | Active/désactive le polling automatique |
+| image_filename | TEXT | Nom du fichier photo (stocké dans `/app/data/charger_images/`) |
+| last_seen | DATETIME | Dernière réponse UDP réussie |
 
 ---
 
 ## API REST
+
+### Sessions & stats
 
 | Méthode | Endpoint | Description |
 |---|---|---|
@@ -270,11 +328,40 @@ Un seul enregistrement (id=1) contenant les prix HC et HP actifs, mis à jour vi
 | GET | `/api/sessions/export` | Export CSV (mêmes filtres) |
 | GET | `/api/stats/daily` | Agrégats journaliers |
 | GET | `/api/stats/monthly` | Agrégats mensuels |
+| GET | `/api/stats/hourly` | Fréquence horaire |
 | GET | `/api/imports` | Historique des imports |
-| GET | `/api/config/tariff` | Tarifs actuels |
-| PUT | `/api/config/tariff` | Mise à jour des tarifs |
-| POST | `/api/config/tariff/recalculate` | Recalcul des coûts sur tout l'historique |
+
+### Configuration
+
+| Méthode | Endpoint | Description |
+|---|---|---|
+| GET/PUT | `/api/config/tariff` | Tarifs actifs |
+| GET/POST | `/api/config/tariff/periods` | Historique des périodes tarifaires |
+| GET/PUT | `/api/config/tariff/rule` | Règles HC/HP configurables |
+| POST | `/api/config/tariff/recalculate` | Recalcul HC/HP + coûts sur tout l'historique |
+| GET/PUT | `/api/config/alert` | Configuration des alertes webhook |
+
+### Bornes EVSE (UDP)
+
+| Méthode | Endpoint | Description |
+|---|---|---|
+| GET | `/api/chargers` | Liste des bornes configurées |
+| POST | `/api/chargers` | Créer une borne |
+| PUT | `/api/chargers/{id}` | Modifier une borne |
+| DELETE | `/api/chargers/{id}` | Supprimer une borne |
+| POST | `/api/chargers/test` | Tester la connexion UDP (pré-enregistrement) |
+| POST | `/api/chargers/{id}/test` | Tester la connexion UDP (borne enregistrée) |
+| GET | `/api/chargers/{id}/status` | Statut temps réel via UDP |
+| POST | `/api/chargers/{id}/image` | Upload photo |
+| GET | `/api/chargers/live` | Cache statut de toutes les bornes (sans UDP) |
+| GET | `/api/chargers/active-charge` | Sessions actives : énergie + durée en temps réel |
+
+### Utilitaires
+
+| Méthode | Endpoint | Description |
+|---|---|---|
 | GET | `/api/health` | Health check |
+| GET | `/api/version` | Version de l'application |
 
 ---
 
@@ -284,21 +371,35 @@ Un seul enregistrement (id=1) contenant les prix HC et HP actifs, mis à jour vi
 
 - Docker + Docker Compose
 - Caddy existant connecté au réseau Docker `home.lan`
-- Accès internet depuis Docker (pour le build npm)
+- Réseau en `host` pour le backend (nécessaire pour les broadcasts UDP LAN)
 
 ### Installation
 
 ```bash
-# 1. Créer le dossier de données
 mkdir -p /srv/docker_data/evstats
-
-# 2. Cloner le repo
 cd /srv/docker_data
 git clone git@gogs.home.lan:fpicard/evstats.git
-
-# 3. Build et démarrage
 cd evstats
 docker compose up -d --build
+```
+
+### docker-compose.override.yml (homelab)
+
+```yaml
+services:
+  evstats-api:
+    volumes:
+      - /srv/docker_data/evstats:/app/data
+    # network_mode: host → pas de networks explicite ici
+
+  evstats-frontend:
+    ports: []
+    networks:
+      - home.lan
+
+networks:
+  home.lan:
+    external: true
 ```
 
 ### Ajouter le bloc dans le Caddyfile existant
@@ -307,10 +408,6 @@ docker compose up -d --build
 evstats.home.lan {
     reverse_proxy evstats-frontend:80
 }
-```
-
-```bash
-docker exec caddy caddy reload --config /etc/caddy/Caddyfile
 ```
 
 ### Mise à jour
@@ -324,11 +421,8 @@ docker compose up -d --build
 ### Backup SQLite (cron)
 
 ```bash
-# Ajouter dans crontab (crontab -e)
 0 3 * * * /srv/docker_data/evstats/scripts/backup.sh
 ```
-
-Le script conserve 30 jours de backups dans `/srv/docker_data/evstats/backups/`.
 
 ---
 
@@ -336,78 +430,57 @@ Le script conserve 30 jours de backups dans `/srv/docker_data/evstats/backups/`.
 
 ### v1.0.0 — MVP
 - [x] Import XLSX avec déduplication (`record_id`)
-- [x] Parsing EVSEMaster (colonnes FR)
-- [x] Stockage SQLite
-- [x] Calcul HC/HP avec découpage minute-à-minute des sessions
-- [x] Dashboard : KPIs, graphiques barres HC/HP, camembert, classement des mois
-- [x] Tarifs EDF configurables via UI + recalcul global
-- [x] Économies vs facturation 100% HP
-- [x] Tendances vs mois précédent
-- [x] Vue 30 jours / journalière / mensuelle
-- [x] Tableau sessions paginé + filtrable (statut, dates)
-- [x] Export CSV (filtres actifs)
-- [x] Script backup SQLite (30 jours de rétention)
-- [x] Déploiement Docker + Caddy
+- [x] Calcul HC/HP avec découpage minute-à-minute
+- [x] Dashboard : KPIs, graphiques, camembert, classement des mois
+- [x] Tarifs EDF configurables + recalcul global
+- [x] Export CSV, script backup SQLite
 
 ### v1.1.0
-- [x] Historique des tarifs EDF avec périodes de validité (`valid_from`)
-- [x] Recalcul des coûts par tranche historique (bon tarif par date de session)
-- [x] Graphique fréquence horaire des sessions (coloration HC/HP)
-- [x] Alertes consommation mensuelle (seuil kWh / €, webhook ntfy/Slack/Discord)
-- [x] Export rapport PDF mensuel (KPIs + tableau des sessions)
-- [x] Footer version dynamique (fichier `VERSION` unique, backend + frontend)
+- [x] Historique des tarifs EDF avec périodes de validité
+- [x] Graphique fréquence horaire
+- [x] Alertes consommation mensuelle (webhook ntfy/Slack/Discord)
+- [x] Rapports PDF mensuels
+- [x] Footer version dynamique (fichier `VERSION` unique)
 
 ### v1.2.0
-- [x] Correction responsive : tableaux scrollables, PieChart adaptatif, formulaires mobile
-- [x] Légende explicative sur le graphique "Coût réel vs économies"
-- [x] PieChart dans `ResponsiveContainer` (adaptatif)
-
-### v1.2.1
-- [x] Récapitulatif annuel (énergie, coût, économies par année)
-- [x] Filtre par année sur le classement des mois
+- [x] Correctifs responsive mobile
+- [x] Récapitulatif annuel + filtre par année
 
 ### v1.3.0
-- [x] Page Véhicule : specs (batterie nette, conso réelle), photo upload
-- [x] KPIs au kilomètre : km rechargés, coût/100km, économies/100km, pleins équivalents
-- [x] Upload image véhicule (JPEG/PNG/WebP, stockée dans le volume Docker)
-- [x] Publication open source (GitHub, licence MIT, GitHub Actions GHCR)
+- [x] Page Véhicule : specs, photo, KPIs/km
+- [x] Publication open source (GitHub, MIT)
 
 ### v1.4.0
-- [x] Règles HC/HP entièrement configurables depuis l'interface Paramètres
-- [x] Jours entièrement HC paramétrables (cases à cocher Lun→Dim)
-- [x] Plages horaires HC configurables (plusieurs fenêtres possibles, support chevauchement minuit)
-- [x] Libellé libre pour identifier le contrat (ex: "EDF HC/HP + Week-end + Mercredi")
-- [x] Recalcul étendu : recalcule la répartition HC/HP **et** les coûts sur tout l'historique
-- [x] Import utilise les règles configurées (pas les règles par défaut codées en dur)
+- [x] Règles HC/HP entièrement configurables depuis l'interface
+- [x] Jours entièrement HC paramétrables, plages horaires multiples
 
-### v1.4.1
-- [x] Légendes des graphiques remplacées par un bouton ⓘ avec tooltip au survol
+### v1.4.1 — v1.4.2
+- [x] Bouton ⓘ tooltip sur les graphiques
+- [x] Véhicule actif (modèle imprimante par défaut), KPIs/km sur véhicule actif uniquement
 
-### v1.4.2
-- [x] Véhicule actif : un seul véhicule "par défaut" à la fois (modèle imprimante par défaut)
-- [x] KPIs au km affichés uniquement pour le véhicule actif
-- [x] Chip "Actif" (vert) + contour sur la carte active, chip cliquable "Définir comme actif" sur les autres
-- [x] Premier véhicule créé automatiquement actif
-
-### v1.5.0 / v1.5.1
-- [x] Page Chargeurs : ajout/modification/suppression de bornes EVSE via l'interface
-- [x] Intégration UDP directe avec les bornes Morec/EVSEMaster (protocole port 28376)
-- [x] Test de connexion intégré dans le dialog d'ajout (découverte automatique du numéro de série)
-- [x] Statut temps réel : tension, courant, puissance instantanée (bouton Rafraîchir)
-- [x] Verrou asyncio : une seule session UDP à la fois (protocole EVSEMaster sans sessions persistantes)
-- [x] Photo de borne (upload JPEG/PNG/WebP)
-- [x] Support FQDN en plus d'IP (résolution DNS locale)
+### v1.5.0
+- [x] Page Chargeurs : ajout/modification/suppression, photo, FQDN
+- [x] Intégration UDP directe (protocole EVSEMaster port 28376)
+- [x] Test de connexion avec découverte automatique du numéro de série
+- [x] Verrou asyncio : une seule session UDP à la fois
 
 ### v1.6.0
-- [x] Polling automatique des bornes en arrière-plan (asyncio, toutes les 30s en veille)
-- [x] Détection automatique début/fin de charge (seuil courant > 0.5A)
-- [x] Enregistrement automatique des sessions UDP en base de données (avec calcul HC/HP + coût)
-- [x] Cache statut en mémoire — page Chargeurs auto-rafraîchie sans requête UDP
-- [x] Bannière "Charge en cours" sur le Dashboard (tension/courant/puissance, animation pulse)
+- [x] Polling automatique en arrière-plan (30 s veille, continu en charge)
+- [x] Détection automatique début/fin de charge (0.5 A / 0.1 A × 3)
+- [x] Enregistrement automatique des sessions UDP (HC/HP + coût calculés)
+- [x] Cache statut en mémoire (page Chargeurs auto-rafraîchie)
+- [x] Bannière "Charge en cours" sur le Dashboard (animation pulse)
+- [x] Chip UDP sur les sessions auto-enregistrées dans le tableau Sessions
+
+### v1.6.1
+- [x] Énergie session et durée en temps réel dans la bannière (rafraîchi toutes les 5 s)
+- [x] Compteur énergie hardware borne (payload [15:17]) — précis même si cycles manqués
+- [x] Persistance restart-proof : `active_charges.json` dans le volume Docker
+- [x] Timezone Europe/Paris : `TZ=Europe/Paris` dans docker-compose + `datetime.now()`
+- [x] Script migration one-shot UTC → Europe/Paris pour les sessions existantes
 
 ### À venir
-- [ ] Enregistrement automatique des sessions de charge via UDP (sans import XLSX)
-- [ ] Support du tarif Tempo EDF (Bleu/Blanc/Rouge) — nécessite intégration API RTE pour le calendrier des couleurs de jours
+- [ ] Support du tarif Tempo EDF (Bleu/Blanc/Rouge) — nécessite intégration API RTE
 - [ ] Comparaison coût électrique vs thermique (€/100km)
 - [ ] Import automatique via partage de fichier (Nextcloud, etc.)
 
@@ -415,14 +488,10 @@ Le script conserve 30 jours de backups dans `/srv/docker_data/evstats/backups/`.
 
 ## Contraintes connues
 
-- L'intégration UDP directe (v1.5.0) permet de contourner les exports manuels, mais une seule session UDP à la fois est possible (l'app EVSEMaster doit être fermée pendant les requêtes). Le protocole ne maintient pas de session persistante.
-- L'export manuel `.xlsx` reste disponible comme méthode d'import pour l'historique existant.
-- Format de colonnes potentiellement variable selon la version EVSEMaster
-- **Tarif Tempo EDF non supporté** : le Tempo repose sur une couleur de jour (Bleu/Blanc/Rouge)
-  publiée chaque soir par RTE pour le lendemain, avec des plages HC/HP et des prix différents pour
-  chaque couleur. L'intégrer nécessiterait d'interroger l'API RTE en temps réel pour obtenir le
-  calendrier des couleurs, et d'adapter le moteur de calcul pour gérer trois niveaux tarifaires.
-  Cette évolution est identifiée en roadmap mais hors scope de la version actuelle.
+- **Une seule session UDP à la fois** : l'app EVSEMaster mobile doit être fermée pendant les requêtes du poller (contrainte protocolaire). Les deux ne peuvent pas se connecter simultanément à la borne.
+- **Broadcasts intermittents** : si EVSEMaster se reconnecte en arrière-plan, le poller manque des cycles. L'énergie est néanmoins correcte grâce au compteur hardware absolu.
+- **Compteur hardware uint16** : overflow à 65 535 Wh (65,5 kWh) par session — suffisant pour toute session domestique usuelle.
+- **Tarif Tempo EDF non supporté** : nécessite l'API RTE en temps réel pour le calendrier des couleurs de jours.
 
 ---
 

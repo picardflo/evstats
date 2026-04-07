@@ -5,21 +5,34 @@ Rôles :
   1. Maintenir un cache du statut de chaque borne (tension, courant, puissance)
   2. Détecter le début et la fin des sessions de charge
   3. Enregistrer automatiquement les sessions terminées en base de données
+  4. Persister l'état des sessions actives sur disque (survit aux restarts)
 
 Architecture :
   - Une boucle asyncio unique tourne en permanence (démarrée dans le lifespan FastAPI)
   - Chaque itération interroge toutes les bornes activées et avec serial connu
   - Le verrou `udp_lock` (asyncio.Lock) est partagé avec les endpoints manuels
     → évite deux sessions UDP simultanées
-  - Le cache `status_cache` est lu par GET /api/chargers/{id}/live (zéro UDP)
+  - Le cache `status_cache` est lu par GET /api/chargers/live (zéro UDP)
+  - GET /api/chargers/active-charge expose l'énergie+durée en temps réel
 
-Intégration d'énergie :
-  - Méthode des trapèzes : energie += (P_n-1 + P_n) / 2 × Δt
-  - Précision suffisante pour un usage domestique (~±5% selon interval de poll)
+Mesure de l'énergie (par ordre de priorité) :
+  1. Compteur hardware absolu (bytes [15:17] du payload 0x0004, Wh total vie de
+     la borne) — exact même si des cycles de poll sont manqués (app EVSEMaster
+     concurrente, broadcast absent, etc.).
+     Formule : energy_wh = energy_wh_offset + (counter_actuel - counter_début)
+     L'offset préserve l'énergie accumulée avant la première lecture du compteur
+     (notamment après un restart avec restauration depuis JSON).
+  2. Intégration trapèzes : energy += (P_n-1 + P_n) / 2 × Δt
+     Repli si le compteur hardware n'est pas disponible dans le payload.
 
 Détection fin de session :
   - 3 lectures consécutives avec courant < 0.1A → fin confirmée
   - Évite les faux négatifs sur brèves coupures de courant
+
+Persistance (restart-proof) :
+  - _active_charges est sauvegardé dans /app/data/active_charges.json
+    après chaque mise à jour (début/fin de charge ou poll réussi).
+  - Restauré au démarrage → start_time et énergie survivent aux restarts.
 """
 
 import asyncio
