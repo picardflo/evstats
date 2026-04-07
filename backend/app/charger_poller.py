@@ -26,6 +26,7 @@ import asyncio
 import json
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, Optional
 
 from sqlmodel import Session, select
@@ -34,6 +35,9 @@ from .database import engine
 from .models import Charger, ChargingSession, TariffPeriod, TariffRule
 from .tariff import TariffRuleConfig, HcWindow, compute_tariff, DEFAULT_PRICE_HC, DEFAULT_PRICE_HP
 from . import udp_client
+
+# Fichier de persistance des sessions actives (survit aux restarts)
+_ACTIVE_CHARGES_FILE = Path("/app/data/active_charges.json")
 
 
 # ── Seuils ────────────────────────────────────────────────────────────────────
@@ -126,6 +130,44 @@ def _get_tariff_rule_config(db: Session) -> TariffRuleConfig:
         return TariffRuleConfig()
 
 
+# ── Persistance des sessions actives (survit aux restarts) ───────────────────
+
+def _persist_active_charges():
+    """Sauvegarde _active_charges sur disque (JSON)."""
+    try:
+        data = {
+            str(cid): {
+                "charger_id": c.charger_id,
+                "start_time": c.start_time.isoformat(),
+                "energy_wh":  c.energy_wh,
+                "last_power_w": c.last_power_w,
+            }
+            for cid, c in _active_charges.items()
+        }
+        _ACTIVE_CHARGES_FILE.write_text(json.dumps(data))
+    except Exception as e:
+        print(f"[poller] Impossible de persister active_charges : {e}", flush=True)
+
+
+def _restore_active_charges():
+    """Restaure _active_charges depuis le fichier JSON au démarrage."""
+    if not _ACTIVE_CHARGES_FILE.exists():
+        return
+    try:
+        data = json.loads(_ACTIVE_CHARGES_FILE.read_text())
+        for cid_str, d in data.items():
+            cid = int(cid_str)
+            _active_charges[cid] = ActiveCharge(
+                charger_id=d["charger_id"],
+                start_time=datetime.fromisoformat(d["start_time"]),
+                energy_wh=d["energy_wh"],
+                last_power_w=d.get("last_power_w", 0.0),
+            )
+        print(f"[poller] Sessions actives restaurées : {list(_active_charges.keys())}", flush=True)
+    except Exception as e:
+        print(f"[poller] Impossible de restaurer active_charges : {e}", flush=True)
+
+
 # ── Sauvegarde de session ─────────────────────────────────────────────────────
 
 def _save_charge_session(charger: ChargerSnapshot, charge: ActiveCharge, end_time: datetime):
@@ -206,8 +248,10 @@ def _process_status(charger: ChargerSnapshot, status: dict, poll_time: datetime)
                 print(f"[poller] Fin de charge confirmée sur borne {cid} ({charge.energy_wh:.3f} Wh)", flush=True)
                 _save_charge_session(charger, charge, poll_time)
                 del _active_charges[cid]
+                _persist_active_charges()
         else:
             charge.zero_current_count = 0
+            _persist_active_charges()
 
     elif current > CHARGE_START_A:
         print(f"[poller] Début de charge détecté sur borne {cid} ({current:.2f} A)", flush=True)
@@ -217,6 +261,7 @@ def _process_status(charger: ChargerSnapshot, status: dict, poll_time: datetime)
             last_poll_time=poll_time,
             last_power_w=power_w,
         )
+        _persist_active_charges()
 
 
 # ── Poll d'une borne ──────────────────────────────────────────────────────────
@@ -310,6 +355,7 @@ async def _poller_loop():
 def start_poller():
     """Démarre la boucle de polling en arrière-plan (appeler dans le lifespan FastAPI)."""
     global _poller_task
+    _restore_active_charges()
     _poller_task = asyncio.create_task(_poller_loop())
     print("[poller] Tâche créée", flush=True)
 
