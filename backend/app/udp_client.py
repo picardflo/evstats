@@ -145,14 +145,14 @@ def test_connection(ip: str, password: str, timeout: int = 20) -> dict:
             except socket.timeout:
                 continue
 
-            logger.info("UDP reçu : %s:%s len=%d hex=%s", addr[0], addr[1], len(data), data[:20].hex())
+            print(f"[UDP] reçu {addr[0]}:{addr[1]} len={len(data)} hex={data[:20].hex()}", flush=True)
 
             if addr[0] != ip:
-                logger.info("  → ignoré (source %s ≠ %s)", addr[0], ip)
+                print(f"[UDP]   → ignoré (source {addr[0]} ≠ {ip})", flush=True)
                 continue
 
             cmd, _ = _parse_response(data)
-            logger.info("  → cmd=0x%04x (attendu 0x%04x)", cmd, CMD_BROADCAST)
+            print(f"[UDP]   → cmd=0x{cmd:04x} (attendu broadcast 0x{CMD_BROADCAST:04x})", flush=True)
             if cmd == CMD_BROADCAST:
                 serial_bytes = _serial_from_packet(data)
                 src_port = addr[1]
@@ -182,7 +182,7 @@ def test_connection(ip: str, password: str, timeout: int = 20) -> dict:
             except socket.timeout:
                 continue
             cmd, _ = _parse_response(data)
-            logger.info("Login response: cmd=0x%04x hex=%s", cmd, data[:22].hex())
+            print(f"[UDP] login response: cmd=0x{cmd:04x} hex={data[:22].hex()}", flush=True)
             if cmd == CMD_LOGIN_OK:
                 login_ok = True
                 break
