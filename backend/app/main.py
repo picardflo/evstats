@@ -412,10 +412,25 @@ async def import_xlsx(
     duplicate_rows = 0
 
     for p in parsed:
+        # Doublon exact (même record_id XLS)
         existing = db.exec(
             select(ChargingSession).where(ChargingSession.record_id == p.record_id)
         ).first()
         if existing:
+            duplicate_rows += 1
+            continue
+
+        # Doublon cross-source : session UDP qui chevauche cette session XLS
+        # sur le même chargeur (start_time et end_time se recoupent)
+        udp_overlap = db.exec(
+            select(ChargingSession).where(
+                ChargingSession.source == "udp",
+                ChargingSession.charger_id == p.charger_id,
+                ChargingSession.start_time < p.end_time,
+                ChargingSession.end_time > p.start_time,
+            )
+        ).first()
+        if udp_overlap:
             duplicate_rows += 1
             continue
 
