@@ -3,6 +3,7 @@
  *
  * Fonctionnalités :
  *  - Ajout / édition / suppression d'un véhicule (nom, année, batterie, conso)
+ *  - Autocomplete depuis vehicles_db.json (ev-database.org) — pré-remplit la fiche
  *  - Upload d'une photo (JPEG/PNG/WebP, stockée côté serveur)
  *  - KPIs calculés à partir de toutes les sessions :
  *      · km rechargés  = énergie × 1000 / consommation_wh_per_km
@@ -14,6 +15,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import {
   Box, Typography, Paper, Grid, Button, Dialog, DialogTitle, DialogContent,
   DialogActions, TextField, CircularProgress, Alert, IconButton, Chip,
+  Autocomplete,
 } from '@mui/material'
 import DirectionsCarIcon from '@mui/icons-material/DirectionsCar'
 import AddIcon from '@mui/icons-material/Add'
@@ -63,6 +65,12 @@ export default function Vehicle() {
   const [loading, setLoading]       = useState(true)
   const [error, setError]           = useState(null)
   const [success, setSuccess]       = useState(null)
+
+  // Base de données véhicules pour autocomplete
+  const [vehiclesDb, setVehiclesDb] = useState([])
+  useEffect(() => {
+    fetch('/vehicles_db.json').then(r => r.json()).then(setVehiclesDb).catch(() => {})
+  }, [])
 
   // Dialog création / édition
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -446,10 +454,38 @@ export default function Vehicle() {
         <DialogContent>
           <Grid container spacing={2} sx={{ mt: 0.5 }}>
             <Grid item xs={12}>
-              <TextField
-                fullWidth size="small" label="Nom du véhicule"
-                value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="Ex : Nissan LEAF 40 kWh"
+              <Autocomplete
+                freeSolo
+                options={vehiclesDb}
+                getOptionLabel={(opt) => typeof opt === 'string' ? opt : `${opt.brand} ${opt.model}`}
+                groupBy={(opt) => opt.brand}
+                inputValue={form.name}
+                onInputChange={(_, val) => setForm({ ...form, name: val })}
+                onChange={(_, opt) => {
+                  if (!opt || typeof opt === 'string') return
+                  // Pré-remplir tous les champs depuis la DB
+                  setForm({
+                    name: `${opt.brand} ${opt.model}`,
+                    year: opt.years ? String(opt.years).match(/\d{4}/)?.[0] ?? '' : '',
+                    battery_kwh: opt.battery_kwh != null ? String(opt.battery_kwh) : '',
+                    consumption_wh_per_km: opt.consumption_wh_per_km != null ? String(opt.consumption_wh_per_km) : '',
+                    wltp_summer_mixed_wh_per_km:   opt.wltp_summer_mixed_wh_per_km   != null ? String(whkmToKwh100(opt.wltp_summer_mixed_wh_per_km))   : '',
+                    wltp_summer_highway_wh_per_km: opt.wltp_summer_highway_wh_per_km != null ? String(whkmToKwh100(opt.wltp_summer_highway_wh_per_km)) : '',
+                    wltp_summer_city_wh_per_km:    opt.wltp_summer_city_wh_per_km    != null ? String(whkmToKwh100(opt.wltp_summer_city_wh_per_km))    : '',
+                    wltp_winter_mixed_wh_per_km:   opt.wltp_winter_mixed_wh_per_km   != null ? String(whkmToKwh100(opt.wltp_winter_mixed_wh_per_km))   : '',
+                    wltp_winter_highway_wh_per_km: opt.wltp_winter_highway_wh_per_km != null ? String(whkmToKwh100(opt.wltp_winter_highway_wh_per_km)) : '',
+                    wltp_winter_city_wh_per_km:    opt.wltp_winter_city_wh_per_km    != null ? String(whkmToKwh100(opt.wltp_winter_city_wh_per_km))    : '',
+                  })
+                }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    size="small"
+                    label="Nom du véhicule"
+                    placeholder="Ex : Nissan LEAF ou saisie libre"
+                    helperText={vehiclesDb.length > 0 ? `${vehiclesDb.length} modèles disponibles — sélectionne pour pré-remplir` : ''}
+                  />
+                )}
               />
             </Grid>
             <Grid item xs={12}>
