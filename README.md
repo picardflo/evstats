@@ -127,6 +127,15 @@ MIT — see [LICENSE](LICENSE)
 - Historique des périodes tarifaires avec `valid_from` (bon tarif selon la date de la session)
 - Recalcul des coûts sur toutes les sessions existantes en un clic
 
+### Véhicule
+
+- Gestion multi-véhicules avec photo (JPEG/PNG/WebP)
+- Véhicule actif (modèle "imprimante par défaut") — un seul à la fois
+- **KPIs au kilomètre** calculés sur l'ensemble des sessions : km rechargés, coût/100km, économies/100km, pleins équivalents
+- **Données constructeur WLTP** : 6 valeurs optionnelles été/hiver × mixte/autoroute/ville (en kWh/100km)
+- **Autonomies théoriques** calculées pour chaque cas d'usage WLTP
+- **Indicateur d'écart** conso réelle vs WLTP été mixte (coloré vert/orange/rouge)
+
 ### Dashboard
 
 - **KPIs** : sessions, énergie, HC, HP, coût total, coût moyen/session, coût effectif c€/kWh, économies réalisées vs 100% HP
@@ -488,6 +497,11 @@ docker compose up -d --build
 
 ### v1.6.2
 - [x] Déduplication cross-source à l'import XLSX : sessions UDP existantes protégées contre le réimport (overlap temporel)
+
+### v1.6.3
+- [x] Données constructeur WLTP sur le profil véhicule : 6 valeurs été/hiver × mixte/autoroute/ville (kWh/100km)
+- [x] Autonomies théoriques calculées par cas d'usage
+- [x] Indicateur d'écart conso réelle vs WLTP été mixte (vert ≤0%, orange ≤+20%, rouge >+20%)
 
 ### À venir
 - [ ] Support du tarif Tempo EDF (Bleu/Blanc/Rouge) — nécessite intégration API RTE
