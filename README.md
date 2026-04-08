@@ -110,6 +110,7 @@ MIT — see [LICENSE](LICENSE)
 
 - Import manuel de fichiers `.xlsx` (drag & drop ou sélection)
 - Déduplication automatique des sessions (basée sur `Numéro d'enregistrement`)
+- **Déduplication cross-source** : si une session UDP couvre déjà la même plage horaire, la session XLS est ignorée à l'import — évite les doublons lors d'un réimport après mise en service UDP
 - Historique des imports (date, fichier, nouvelles sessions, doublons)
 
 ### Calcul tarifaire
@@ -478,6 +479,9 @@ docker compose up -d --build
 - [x] Persistance restart-proof : `active_charges.json` dans le volume Docker
 - [x] Timezone Europe/Paris : `TZ=Europe/Paris` dans docker-compose + `datetime.now()`
 - [x] Script migration one-shot UTC → Europe/Paris pour les sessions existantes
+
+### v1.6.2
+- [x] Déduplication cross-source à l'import XLSX : sessions UDP existantes protégées contre le réimport (overlap temporel)
 
 ### À venir
 - [ ] Support du tarif Tempo EDF (Bleu/Blanc/Rouge) — nécessite intégration API RTE
