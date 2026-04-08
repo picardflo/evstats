@@ -420,12 +420,12 @@ async def import_xlsx(
             duplicate_rows += 1
             continue
 
-        # Doublon cross-source : session UDP qui chevauche cette session XLS
-        # sur le même chargeur (start_time et end_time se recoupent)
+        # Doublon cross-source : session UDP qui chevauche cette session XLS.
+        # On ne filtre pas sur charger_id car le format EVSEMaster (XLS) et le
+        # nom interne (UDP) ne correspondent pas.
         udp_overlap = db.exec(
             select(ChargingSession).where(
                 ChargingSession.source == "udp",
-                ChargingSession.charger_id == p.charger_id,
                 ChargingSession.start_time < p.end_time,
                 ChargingSession.end_time > p.start_time,
             )
