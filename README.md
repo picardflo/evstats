@@ -37,20 +37,26 @@ Two data acquisition modes are supported:
 
 ### Screenshots
 
-**Dashboard — KPIs, graphiques HC/HP, coût réel vs économies**
-![Dashboard](https://github.com/user-attachments/assets/7c4b488c-0cb1-404c-8663-716860473eb4)
+**Dashboard — KPIs, graphiques HC/HP, coût réel vs économies, bannière charge en cours**
+![Dashboard](https://github.com/user-attachments/assets/68d714c4-86bb-40b8-a61f-b95b9a126f24)
 
-**Import XLSX — drag & drop, historique des imports**
-![Import](https://github.com/user-attachments/assets/f6bdceac-a073-4d81-b336-f4bfe2f56654)
+**Import XLSX — drag & drop, historique des imports avec déduplication cross-source**
+![Import](https://github.com/user-attachments/assets/37ae41f7-5ebf-4f42-9b0e-02ea29645588)
 
-**Sessions de charge — tableau paginé + filtres**
-![Sessions](https://github.com/user-attachments/assets/44c1a770-6fe3-4de6-9c6e-3d5bcb6234ef)
+**Sessions de charge — tableau paginé, filtres, badge UDP**
+![Sessions](https://github.com/user-attachments/assets/152f96e1-4427-48d2-85d5-a14384570fe1)
 
-**Véhicule — specs, photo, KPIs au kilomètre**
-![Véhicule](https://github.com/user-attachments/assets/e1a417f5-016b-4f38-8e9c-d0efc545a4d3)
+**Véhicule — specs, photo, données WLTP constructeur, KPIs au kilomètre**
+![Véhicule](https://github.com/user-attachments/assets/0961d5f1-fa46-4ff0-bc8b-ce9f449fd05d)
+
+**Chargeurs — configuration borne UDP, test de connexion**
+![Chargeurs](https://github.com/user-attachments/assets/e08cffd6-3e6a-477f-b561-2c18a6638a8f)
+
+**Alertes — seuils kWh et € avec webhook**
+![Alertes](https://github.com/user-attachments/assets/e1f3a89a-d1ec-4db1-92aa-3ccb09b4ecb1)
 
 **Paramètres — historique des tarifs EDF**
-![Paramètres](https://github.com/user-attachments/assets/ca3ce7c7-4d8e-49dd-ac01-61805cf05b9c)
+![Paramètres](https://github.com/user-attachments/assets/fd958b69-de27-44ef-aa39-3ee1e1091639)
 
 ---
 
