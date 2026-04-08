@@ -135,6 +135,7 @@ MIT — see [LICENSE](LICENSE)
 - **Données constructeur WLTP** : 6 valeurs optionnelles été/hiver × mixte/autoroute/ville (en kWh/100km)
 - **Autonomies théoriques** calculées pour chaque cas d'usage WLTP
 - **Indicateur d'écart** conso réelle vs WLTP été mixte (coloré vert/orange/rouge)
+- **Autocomplete** à la saisie du nom : 27 modèles pré-remplis (batterie + conso + 6 valeurs WLTP)
 
 ### Dashboard
 
@@ -221,7 +222,8 @@ evstats/
 │   ├── nginx.conf
 │   └── Dockerfile
 ├── scripts/
-│   └── backup.sh                # Backup quotidien SQLite (cron)
+│   ├── backup.sh                # Backup quotidien SQLite (cron)
+│   └── scrape_ev_database.py    # Génération vehicles_db.json (one-shot, voir ci-dessous)
 ├── docker-compose.yml
 ├── VERSION                      # Version unique (lue par backend + frontend)
 └── .gitignore
@@ -440,6 +442,32 @@ docker compose up -d --build
 0 3 * * * /srv/docker_data/evstats/scripts/backup.sh
 ```
 
+### Mise à jour de la base véhicules (autocomplete)
+
+Le fichier `frontend/public/vehicles_db.json` contient 27 modèles populaires du marché français avec leurs données WLTP (batterie, conso, été/hiver). Il est généré une fois et embarqué dans l'image Docker au build.
+
+Pour le régénérer (nouveaux modèles, données mises à jour) :
+
+```bash
+# Depuis la machine de dev (pas la VM)
+cd evstats/
+pip install requests beautifulsoup4   # si pas déjà fait
+python scripts/scrape_ev_database.py --whitelist-only
+```
+
+Puis rebuilder et redéployer :
+
+```bash
+git add frontend/public/vehicles_db.json
+git commit -m "chore: mise à jour vehicles_db.json"
+git push
+# Sur la VM :
+git pull && docker compose up -d --build
+```
+
+> La whitelist des 27 modèles est définie dans `scripts/scrape_ev_database.py` (variable `WHITELIST`).
+> Source des données : [ev-database.org](https://ev-database.org) — consommations réelles (Mild = été, Cold = hiver).
+
 ---
 
 ## Roadmap
@@ -502,6 +530,10 @@ docker compose up -d --build
 - [x] Données constructeur WLTP sur le profil véhicule : 6 valeurs été/hiver × mixte/autoroute/ville (kWh/100km)
 - [x] Autonomies théoriques calculées par cas d'usage
 - [x] Indicateur d'écart conso réelle vs WLTP été mixte (vert ≤0%, orange ≤+20%, rouge >+20%)
+
+### v1.7.0
+- [x] Autocomplete véhicule à la saisie : 27 modèles marché FR avec pré-remplissage automatique (batterie + conso + 6 valeurs WLTP)
+- [x] Script `scrape_ev_database.py` pour régénération de la base véhicules
 
 ### À venir
 - [ ] Support du tarif Tempo EDF (Bleu/Blanc/Rouge) — nécessite intégration API RTE
