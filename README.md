@@ -434,6 +434,7 @@ evstats.home.lan {
 cd /srv/docker_data/evstats
 git pull
 docker compose up -d --build
+docker compose restart evstats-api   # nécessaire pour recharger VERSION (bind mount :ro)
 ```
 
 ### Backup SQLite (cron)
