@@ -45,7 +45,17 @@ function KpiCard({ label, value, unit, color = 'text.primary', sub }) {
   )
 }
 
-const EMPTY_FORM = { name: '', year: '', battery_kwh: '', consumption_wh_per_km: '' }
+const WLTP_KEYS = [
+  'wltp_summer_mixed_wh_per_km', 'wltp_summer_highway_wh_per_km', 'wltp_summer_city_wh_per_km',
+  'wltp_winter_mixed_wh_per_km', 'wltp_winter_highway_wh_per_km', 'wltp_winter_city_wh_per_km',
+]
+const EMPTY_WLTP = Object.fromEntries(WLTP_KEYS.map(k => [k, '']))
+const EMPTY_FORM = { name: '', year: '', battery_kwh: '', consumption_wh_per_km: '', ...EMPTY_WLTP }
+
+// Convertit kWh/100km → Wh/km (stockage interne)
+const kwh100ToWhkm = v => v ? parseFloat(v) * 10 : null
+// Convertit Wh/km → kWh/100km (affichage)
+const whkmToKwh100 = v => v ? +(v / 10).toFixed(1) : null
 
 export default function Vehicle() {
   const [vehicles, setVehicles]     = useState([])
@@ -108,11 +118,15 @@ export default function Vehicle() {
 
   const openEdit = (v) => {
     setEditing(v)
+    const wltp = Object.fromEntries(
+      WLTP_KEYS.map(k => [k, v[k] != null ? String(whkmToKwh100(v[k])) : ''])
+    )
     setForm({
       name: v.name,
       year: v.year ?? '',
       battery_kwh: String(v.battery_kwh),
       consumption_wh_per_km: String(v.consumption_wh_per_km),
+      ...wltp,
     })
     setDialogOpen(true)
   }
@@ -125,6 +139,7 @@ export default function Vehicle() {
         year: form.year ? parseInt(form.year) : null,
         battery_kwh: parseFloat(form.battery_kwh),
         consumption_wh_per_km: parseFloat(form.consumption_wh_per_km),
+        ...Object.fromEntries(WLTP_KEYS.map(k => [k, form[k] ? kwh100ToWhkm(form[k]) : null])),
       }
       if (editing) {
         await updateVehicle(editing.id, payload)
@@ -301,6 +316,70 @@ export default function Vehicle() {
                             </Typography>
                           </Box>
                         </Box>
+
+                        {/* Tableau WLTP constructeur */}
+                        {v.wltp_summer_mixed_wh_per_km && (
+                          <Box sx={{ mt: 2 }}>
+                            <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
+                              Données constructeur WLTP
+                            </Typography>
+                            <Box sx={{
+                              border: '1px solid rgba(255,255,255,0.08)',
+                              borderRadius: 2, overflow: 'hidden',
+                              display: 'inline-block', minWidth: 320,
+                            }}>
+                              {/* En-tête */}
+                              <Box sx={{ display: 'grid', gridTemplateColumns: '90px 1fr 1fr 1fr', bgcolor: 'rgba(255,255,255,0.05)' }}>
+                                {['', 'Mixte', 'Autoroute', 'Ville'].map((h, i) => (
+                                  <Typography key={i} variant="caption" fontWeight={600} sx={{ p: '6px 10px', textAlign: i > 0 ? 'center' : 'left' }}>
+                                    {h}
+                                  </Typography>
+                                ))}
+                              </Box>
+                              {/* Lignes été / hiver */}
+                              {[
+                                { label: '☀️ Été (20°C)', keys: ['wltp_summer_mixed_wh_per_km', 'wltp_summer_highway_wh_per_km', 'wltp_summer_city_wh_per_km'] },
+                                { label: '❄️ Hiver (0°C)', keys: ['wltp_winter_mixed_wh_per_km', 'wltp_winter_highway_wh_per_km', 'wltp_winter_city_wh_per_km'] },
+                              ].map((row, ri) => (
+                                <Box key={ri} sx={{ display: 'grid', gridTemplateColumns: '90px 1fr 1fr 1fr', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                                  <Typography variant="caption" sx={{ p: '6px 10px', color: 'text.secondary' }}>{row.label}</Typography>
+                                  {row.keys.map((k, ci) => {
+                                    const val = v[k]
+                                    const range = val ? Math.round(v.battery_kwh * 1000 / val) : null
+                                    return (
+                                      <Box key={ci} sx={{ p: '4px 10px', textAlign: 'center' }}>
+                                        {val ? (
+                                          <>
+                                            <Typography variant="caption" fontWeight={600} display="block">
+                                              {whkmToKwh100(val)} kWh/100km
+                                            </Typography>
+                                            <Typography variant="caption" color="text.secondary" display="block">
+                                              ~{range} km
+                                            </Typography>
+                                          </>
+                                        ) : (
+                                          <Typography variant="caption" color="text.disabled">—</Typography>
+                                        )}
+                                      </Box>
+                                    )
+                                  })}
+                                </Box>
+                              ))}
+                            </Box>
+                            {/* Écart conso réelle vs WLTP été mixte */}
+                            {(() => {
+                              const ref = v.wltp_summer_mixed_wh_per_km
+                              const real = v.consumption_wh_per_km
+                              const diff = Math.round((real - ref) / ref * 100)
+                              const color = diff <= 0 ? '#06d6a0' : diff <= 20 ? '#ffd60a' : '#ef476f'
+                              return (
+                                <Typography variant="caption" sx={{ mt: 0.5, display: 'block', color }}>
+                                  Conso réelle : {diff > 0 ? '+' : ''}{diff}% vs WLTP été mixte
+                                </Typography>
+                              )
+                            })()}
+                          </Box>
+                        )}
                       </Box>
                       <Box sx={{ display: 'flex', gap: 1 }}>
                         <IconButton size="small" onClick={() => openEdit(v)} sx={{ color: 'text.secondary' }}>
@@ -362,7 +441,7 @@ export default function Vehicle() {
       )}
 
       {/* Dialog ajout / édition */}
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="xs" fullWidth>
+      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{editing ? 'Modifier le véhicule' : 'Nouveau véhicule'}</DialogTitle>
         <DialogContent>
           <Grid container spacing={2} sx={{ mt: 0.5 }}>
@@ -395,6 +474,35 @@ export default function Vehicle() {
                 inputProps={{ step: '1', min: 50 }}
                 helperText="Conso réelle. Ex: LEAF ≈ 160"
               />
+            </Grid>
+
+            {/* Section WLTP */}
+            <Grid item xs={12}>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1, mt: 0.5 }}>
+                Données constructeur WLTP (optionnel) — en kWh/100km
+              </Typography>
+              <Box sx={{ display: 'grid', gridTemplateColumns: '80px 1fr 1fr 1fr', gap: 1, alignItems: 'center' }}>
+                <Box />
+                {['Mixte', 'Autoroute', 'Ville'].map(h => (
+                  <Typography key={h} variant="caption" color="text.secondary" sx={{ textAlign: 'center' }}>{h}</Typography>
+                ))}
+                {[
+                  { label: '☀️ Été', keys: ['wltp_summer_mixed_wh_per_km', 'wltp_summer_highway_wh_per_km', 'wltp_summer_city_wh_per_km'] },
+                  { label: '❄️ Hiver', keys: ['wltp_winter_mixed_wh_per_km', 'wltp_winter_highway_wh_per_km', 'wltp_winter_city_wh_per_km'] },
+                ].map(row => (
+                  <React.Fragment key={row.label}>
+                    <Typography variant="caption" color="text.secondary">{row.label}</Typography>
+                    {row.keys.map(k => (
+                      <TextField
+                        key={k} size="small" type="number"
+                        value={form[k]} onChange={(e) => setForm({ ...form, [k]: e.target.value })}
+                        inputProps={{ step: '0.1', min: 5 }}
+                        placeholder="—"
+                      />
+                    ))}
+                  </React.Fragment>
+                ))}
+              </Box>
             </Grid>
           </Grid>
         </DialogContent>

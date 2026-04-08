@@ -90,6 +90,13 @@ def _migrate():
         "ALTER TABLE charger ADD COLUMN image_filename TEXT NOT NULL DEFAULT ''",
         # v1.6.0 : colonne source sur chargingsession
         "ALTER TABLE chargingsession ADD COLUMN source TEXT NOT NULL DEFAULT 'xlsx'",
+        # v1.6.2 : données WLTP constructeur sur vehicle (6 colonnes optionnelles)
+        "ALTER TABLE vehicle ADD COLUMN wltp_summer_mixed_wh_per_km REAL",
+        "ALTER TABLE vehicle ADD COLUMN wltp_summer_highway_wh_per_km REAL",
+        "ALTER TABLE vehicle ADD COLUMN wltp_summer_city_wh_per_km REAL",
+        "ALTER TABLE vehicle ADD COLUMN wltp_winter_mixed_wh_per_km REAL",
+        "ALTER TABLE vehicle ADD COLUMN wltp_winter_highway_wh_per_km REAL",
+        "ALTER TABLE vehicle ADD COLUMN wltp_winter_city_wh_per_km REAL",
     ]
     with engine.connect() as conn:
         for stmt in migrations:
@@ -873,6 +880,12 @@ class VehicleOut(BaseModel):
     image_filename: str
     is_active: bool
     created_at: datetime
+    wltp_summer_mixed_wh_per_km:   Optional[float] = None
+    wltp_summer_highway_wh_per_km: Optional[float] = None
+    wltp_summer_city_wh_per_km:    Optional[float] = None
+    wltp_winter_mixed_wh_per_km:   Optional[float] = None
+    wltp_winter_highway_wh_per_km: Optional[float] = None
+    wltp_winter_city_wh_per_km:    Optional[float] = None
 
     class Config:
         from_attributes = True
@@ -881,8 +894,14 @@ class VehicleOut(BaseModel):
 class VehicleIn(BaseModel):
     name: str
     year: Optional[int] = None
-    battery_kwh: float       # Capacité nette en kWh (ex: 36 pour la LEAF 40kWh)
-    consumption_wh_per_km: float  # Conso réelle en Wh/km (ex: 160)
+    battery_kwh: float
+    consumption_wh_per_km: float
+    wltp_summer_mixed_wh_per_km:   Optional[float] = None
+    wltp_summer_highway_wh_per_km: Optional[float] = None
+    wltp_summer_city_wh_per_km:    Optional[float] = None
+    wltp_winter_mixed_wh_per_km:   Optional[float] = None
+    wltp_winter_highway_wh_per_km: Optional[float] = None
+    wltp_winter_city_wh_per_km:    Optional[float] = None
 
 
 @app.get("/api/vehicles", response_model=List[VehicleOut])

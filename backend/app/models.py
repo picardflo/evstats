@@ -138,6 +138,14 @@ class Vehicle(SQLModel, table=True):
     is_active:             bool = Field(default=False) # Un seul véhicule actif à la fois
     created_at:            datetime = Field(default_factory=datetime.now)
 
+    # Données constructeur WLTP (optionnelles) — stockées en Wh/km
+    wltp_summer_mixed_wh_per_km:   Optional[float] = None  # Été mixte
+    wltp_summer_highway_wh_per_km: Optional[float] = None  # Été autoroute
+    wltp_summer_city_wh_per_km:    Optional[float] = None  # Été ville
+    wltp_winter_mixed_wh_per_km:   Optional[float] = None  # Hiver mixte
+    wltp_winter_highway_wh_per_km: Optional[float] = None  # Hiver autoroute
+    wltp_winter_city_wh_per_km:    Optional[float] = None  # Hiver ville
+
 
 class Charger(SQLModel, table=True):
     """
