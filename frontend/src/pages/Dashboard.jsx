@@ -28,7 +28,9 @@ import {
 } from 'recharts'
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
-import { fetchDailyStats, fetchMonthlyStats, fetchHourlyStats, checkAlerts, buildPdfReportUrl } from '../api/client'
+import BoltIcon from '@mui/icons-material/Bolt'
+import EvStationIcon from '@mui/icons-material/EvStation'
+import { fetchDailyStats, fetchMonthlyStats, fetchHourlyStats, checkAlerts, buildPdfReportUrl, fetchAllChargersLive, fetchActiveCharges } from '../api/client'
 
 // Plages HC/HP pour le fond du graphique horaire (lun-ven hors mer)
 const HC_HOURS = new Set([0,1,2,3,4,5,6,7,23]) // 23h30→07h30 approximé à l'heure
@@ -134,6 +136,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [yearFilter, setYearFilter] = useState('all')
+  const [liveStatuses, setLiveStatuses] = useState({})  // { chargerId: status }
+  const [activeChargeDetails, setActiveChargeDetails] = useState([])  // sessions en cours avec énergie+durée
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -155,6 +159,26 @@ export default function Dashboard() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  // Poll du statut des bornes toutes les 30s
+  useEffect(() => {
+    const refresh = () => fetchAllChargersLive()
+      .then(d => setLiveStatuses(Object.fromEntries(Object.entries(d).map(([k, v]) => [parseInt(k), v]))))
+      .catch(() => {})
+    refresh()
+    const id = setInterval(refresh, 30000)
+    return () => clearInterval(id)
+  }, [])
+
+  const activeCharges = Object.values(liveStatuses).filter(s => s.is_charging)
+
+  // Poll des sessions actives toutes les 5s (énergie + durée temps réel)
+  useEffect(() => {
+    const refresh = () => fetchActiveCharges().then(setActiveChargeDetails).catch(() => {})
+    refresh()
+    const id = setInterval(refresh, 5000)
+    return () => clearInterval(id)
+  }, [])
 
   const data = view === 'daily'
     ? allDaily
@@ -239,6 +263,54 @@ export default function Dashboard() {
           <ToggleButton value="monthly">Mensuel</ToggleButton>
         </ToggleButtonGroup>
       </Box>
+
+      {/* Bannière charge en cours (alimentée par le poller UDP) */}
+      {activeCharges.length > 0 && (
+        <Paper sx={{
+          p: 2, mb: 3, borderRadius: 3,
+          border: '1px solid #06d6a0',
+          background: 'linear-gradient(90deg, rgba(6,214,160,0.08) 0%, rgba(6,214,160,0.02) 100%)',
+          display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap',
+        }}>
+          <EvStationIcon sx={{ color: '#06d6a0', fontSize: 28 }} />
+          <Box sx={{ flex: 1 }}>
+            <Typography variant="body1" fontWeight={700} color="#06d6a0">
+              Charge en cours
+            </Typography>
+            {activeCharges.map((s, i) => {
+              const detail = activeChargeDetails[i]
+              const durMin = detail ? Math.floor(detail.duration_minutes) : null
+              const durStr = durMin != null
+                ? durMin >= 60
+                  ? `${Math.floor(durMin / 60)}h${String(durMin % 60).padStart(2, '0')}`
+                  : `${durMin}min`
+                : null
+              return (
+                <Typography key={i} variant="body2" color="text.secondary">
+                  {s.voltage != null ? `${s.voltage} V` : '—'} ·{' '}
+                  {s.current != null ? `${s.current} A` : '—'} ·{' '}
+                  <b style={{ color: '#fff' }}>{s.power_w != null ? `${(s.power_w / 1000).toFixed(2)} kW` : '—'}</b>
+                  {detail && (
+                    <>
+                      {' · '}
+                      <b style={{ color: '#06d6a0' }}>{detail.energy_kwh.toFixed(3)} kWh</b>
+                      {durStr && <> · {durStr}</>}
+                    </>
+                  )}
+                </Typography>
+              )
+            })}
+          </Box>
+          <BoltIcon sx={{
+            color: '#06d6a0', fontSize: 32,
+            animation: 'pulse 1.5s ease-in-out infinite',
+            '@keyframes pulse': {
+              '0%, 100%': { opacity: 1 },
+              '50%': { opacity: 0.3 },
+            },
+          }} />
+        </Paper>
+      )}
 
       {data.length === 0 ? (
         <Alert severity="info">Aucune donnée. Importez un fichier XLSX pour commencer.</Alert>

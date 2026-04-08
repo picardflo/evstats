@@ -232,6 +232,85 @@ export function vehicleImageUrl(id) {
   return `/api/vehicles/${id}/image`
 }
 
+// ── Bornes EVSE / UDP (V2) ────────────────────────────────────────────────────
+
+export async function fetchChargers() {
+  const { data } = await api.get('/chargers')
+  return data
+}
+
+export async function createCharger(payload) {
+  const { data } = await api.post('/chargers', payload)
+  return data
+}
+
+export async function updateCharger(id, payload) {
+  const { data } = await api.put(`/chargers/${id}`, payload)
+  return data
+}
+
+export async function deleteCharger(id) {
+  await api.delete(`/chargers/${id}`)
+}
+
+/**
+ * Teste la connexion UDP à une borne AVANT de l'enregistrer.
+ * @param {{ ip: string, password: string }} payload
+ * @returns {Promise<{ serial, src_port, voltage, current, power_w, is_charging }>}
+ */
+export async function testChargerPreSave(payload) {
+  const { data } = await api.post('/chargers/test', payload, { timeout: 25000 })
+  return data
+}
+
+/**
+ * Teste la connexion UDP d'une borne enregistrée.
+ * @param {number} id
+ */
+export async function testCharger(id) {
+  const { data } = await api.post(`/chargers/${id}/test`, {}, { timeout: 25000 })
+  return data
+}
+
+/**
+ * Récupère le statut temps réel d'une borne (tension, courant, puissance).
+ * @param {number} id
+ * @returns {Promise<{ voltage, current, power_w, is_charging, last_seen }>}
+ */
+export async function fetchChargerStatus(id) {
+  const { data } = await api.get(`/chargers/${id}/status`, { timeout: 25000 })
+  return data
+}
+
+/**
+ * Retourne le statut en cache de toutes les bornes (lu par le poller, pas de requête UDP).
+ * @returns {Promise<{ [chargerId]: { voltage, current, power_w, is_charging, updated_at, error } }>}
+ */
+export async function fetchAllChargersLive() {
+  const { data } = await api.get('/chargers/live')
+  return data
+}
+
+/**
+ * Retourne les sessions de charge actives avec énergie cumulée et durée.
+ * @returns {Promise<Array<{ charger_id, energy_kwh, duration_minutes, voltage, current, power_w }>>}
+ */
+export async function fetchActiveCharges() {
+  const { data } = await api.get('/chargers/active-charge')
+  return data
+}
+
+export async function uploadChargerImage(id, file) {
+  const form = new FormData()
+  form.append('file', file)
+  const { data } = await api.post(`/chargers/${id}/image`, form)
+  return data
+}
+
+export function chargerImageUrl(id) {
+  return `/api/chargers/${id}/image`
+}
+
 // ── Version ───────────────────────────────────────────────────────────────────
 
 export async function fetchVersion() {

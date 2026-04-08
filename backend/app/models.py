@@ -9,6 +9,7 @@ Tables :
   - tariff_rule       : règles HC/HP configurables (singleton id=1) (V2)
   - alert_config      : configuration des alertes de consommation (V2)
   - vehicle           : véhicules électriques avec specs (V2)
+  - charger           : bornes de recharge configurées (intégration UDP directe) (V2)
 """
 
 from datetime import datetime, date
@@ -38,15 +39,16 @@ class ChargingSession(SQLModel, table=True):
     hp_kwh:     float  # Part HP calculée par tariff.py
     cost_eur:   float  # Coût = hc_kwh × price_hc + hp_kwh × price_hp
 
-    end_status: str  # "Pull Plug", "Fix Time", "Power Down", ou hash RFID
-    start_user: str  # "Clock" ou hash RFID
+    end_status: str  # "Pull Plug", "Fix Time", "Power Down", "UDP Auto", ou hash RFID
+    start_user: str  # "Clock", "UDP Auto", ou hash RFID
+    source:     str  = Field(default="xlsx")  # "xlsx" ou "udp" (v1.5.0+)
 
 
 class ImportLog(SQLModel, table=True):
     """Historique des fichiers XLSX importés."""
     id: Optional[int] = Field(default=None, primary_key=True)
 
-    imported_at:    datetime = Field(default_factory=datetime.utcnow)
+    imported_at:    datetime = Field(default_factory=datetime.now)
     filename:       str
     total_rows:     int
     new_rows:       int
@@ -62,7 +64,7 @@ class TariffConfig(SQLModel, table=True):
     id:         int      = Field(default=1, primary_key=True)
     price_hc:   float    = Field(default=0.1724)
     price_hp:   float    = Field(default=0.2305)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.now)
 
 
 class TariffPeriod(SQLModel, table=True):
@@ -86,7 +88,7 @@ class TariffPeriod(SQLModel, table=True):
     price_hc:   float          # €/kWh Heures Creuses
     price_hp:   float          # €/kWh Heures Pleines
     label:      str  = Field(default="")  # Libellé optionnel ex: "Révision février 2026"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=datetime.now)
 
 
 class TariffRule(SQLModel, table=True):
@@ -111,7 +113,7 @@ class TariffRule(SQLModel, table=True):
     full_hc_days: str      = Field(default='[2, 5, 6]')
     hc_windows:   str      = Field(default='[{"start_h": 23, "start_m": 30, "end_h": 7, "end_m": 30}]')
     label:        str      = Field(default="EDF HC/HP + Week-end + Mercredi")
-    updated_at:   datetime = Field(default_factory=datetime.utcnow)
+    updated_at:   datetime = Field(default_factory=datetime.now)
 
 
 class Vehicle(SQLModel, table=True):
@@ -134,7 +136,35 @@ class Vehicle(SQLModel, table=True):
     consumption_wh_per_km: float                       # Conso réelle en Wh/km
     image_filename:        str  = Field(default="")    # Nom de fichier image
     is_active:             bool = Field(default=False) # Un seul véhicule actif à la fois
-    created_at:            datetime = Field(default_factory=datetime.utcnow)
+    created_at:            datetime = Field(default_factory=datetime.now)
+
+
+class Charger(SQLModel, table=True):
+    """
+    Borne de recharge configurée pour l'intégration UDP directe.
+
+    serial   : numéro de série hex, obtenu automatiquement lors du test de connexion
+    src_port : port source UDP de la borne (typiquement 6186), obtenu lors du test
+    model    : libellé du modèle (saisi manuellement ou récupéré lors du test)
+    firmware : version firmware (optionnel, saisi manuellement)
+
+    Flux UDP :
+      1. Attendre broadcast 0x0001 sur port 28376
+      2. Authentification (0x8002 → 0x0002 → 0x8001)
+      3. Requête statut (0x8004 → 0x0004 : tension, courant, puissance)
+    """
+    id:         Optional[int] = Field(default=None, primary_key=True)
+    name:       str                              # Nom libre ex: "Morec Garage"
+    ip:         str                              # Adresse IP de la borne
+    password:   str                              # Mot de passe 6 chiffres
+    serial:     str      = Field(default="")     # Hex serial (rempli après test)
+    src_port:   int      = Field(default=6186)   # Port UDP source de la borne
+    model:      str      = Field(default="")     # Modèle (ex: "SQW49")
+    firmware:   str      = Field(default="")     # Firmware (ex: "313251.118A0053")
+    is_enabled:     bool     = Field(default=True)   # Activer/désactiver le polling
+    image_filename: str      = Field(default="")     # Nom de fichier dans /app/data/images/
+    last_seen:      Optional[datetime] = None        # Dernière communication réussie
+    created_at:     datetime = Field(default_factory=datetime.now)
 
 
 class AlertConfig(SQLModel, table=True):
@@ -156,4 +186,4 @@ class AlertConfig(SQLModel, table=True):
     threshold_eur:    float    = Field(default=0.0)   # 0 = désactivé
     webhook_url:      str      = Field(default="")    # URL webhook de notification
     last_alert_month: str      = Field(default="")    # Format "YYYY-MM"
-    updated_at:       datetime = Field(default_factory=datetime.utcnow)
+    updated_at:       datetime = Field(default_factory=datetime.now)

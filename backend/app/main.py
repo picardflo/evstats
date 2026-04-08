@@ -28,9 +28,17 @@ Endpoints disponibles :
   POST   /api/vehicles/{id}/set-active        Définit le véhicule actif (V2)
   POST   /api/vehicles/{id}/image             Upload image d'un véhicule (V2)
   GET    /api/vehicles/{id}/image             Sert l'image d'un véhicule (V2)
+  GET    /api/chargers                        Liste des bornes configurées (V2)
+  POST   /api/chargers                        Ajoute une borne (V2)
+  PUT    /api/chargers/{id}                   Modifie une borne (V2)
+  DELETE /api/chargers/{id}                   Supprime une borne (V2)
+  POST   /api/chargers/test                   Teste une connexion UDP (avant enregistrement)
+  POST   /api/chargers/{id}/test              Teste la connexion d'une borne enregistrée
+  GET    /api/chargers/{id}/status            Statut temps réel d'une borne (V2)
   GET    /api/health                          Health check
 """
 
+import asyncio
 import csv
 import io
 import json
@@ -49,13 +57,19 @@ from pydantic import BaseModel
 from sqlmodel import Session, select, func
 
 from .database import create_db, get_session, engine
-from .models import ChargingSession, ImportLog, TariffConfig, TariffPeriod, TariffRule, AlertConfig, Vehicle
+from .models import ChargingSession, ImportLog, TariffConfig, TariffPeriod, TariffRule, AlertConfig, Vehicle, Charger
 from .parser import parse_xlsx
 from .tariff import DEFAULT_PRICE_HC, DEFAULT_PRICE_HP, compute_tariff, TariffRuleConfig, HcWindow
 from .report import generate_monthly_pdf
+from . import udp_client
+from . import charger_poller
 
 # Répertoire de stockage des images véhicules (dans le volume Docker)
 IMAGES_DIR = Path("/app/data/images")
+
+# Verrou UDP partagé entre les endpoints manuels et le poller de fond
+# Défini dans charger_poller.py, importé ici pour être utilisé dans les endpoints
+_udp_lock = charger_poller.udp_lock
 
 
 # ── Lifecycle ────────────────────────────────────────────────────────────────
@@ -71,6 +85,11 @@ def _migrate():
         # v1.4.0 : TariffRule (nouvelle table, créée par create_db)
         # v1.4.2 : colonne is_active sur vehicle
         "ALTER TABLE vehicle ADD COLUMN is_active INTEGER NOT NULL DEFAULT 0",
+        # v1.5.0 : table charger (nouvelle table, créée par create_db — migration no-op)
+        # v1.5.1 : colonne image_filename sur charger
+        "ALTER TABLE charger ADD COLUMN image_filename TEXT NOT NULL DEFAULT ''",
+        # v1.6.0 : colonne source sur chargingsession
+        "ALTER TABLE chargingsession ADD COLUMN source TEXT NOT NULL DEFAULT 'xlsx'",
     ]
     with engine.connect() as conn:
         for stmt in migrations:
@@ -125,7 +144,11 @@ async def lifespan(app: FastAPI):
 
     # Répertoire des images véhicules
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Démarrage du poller UDP en arrière-plan
+    charger_poller.start_poller()
     yield
+    charger_poller.stop_poller()
 
 
 app = FastAPI(title="EVSE Stats API", lifespan=lifespan)
@@ -250,6 +273,7 @@ class SessionOut(BaseModel):
     hp_kwh: float
     end_status: str
     start_user: str
+    source: str  # "xlsx" ou "udp"
 
     class Config:
         from_attributes = True
@@ -388,10 +412,25 @@ async def import_xlsx(
     duplicate_rows = 0
 
     for p in parsed:
+        # Doublon exact (même record_id XLS)
         existing = db.exec(
             select(ChargingSession).where(ChargingSession.record_id == p.record_id)
         ).first()
         if existing:
+            duplicate_rows += 1
+            continue
+
+        # Doublon cross-source : session UDP qui chevauche cette session XLS.
+        # On ne filtre pas sur charger_id car le format EVSEMaster (XLS) et le
+        # nom interne (UDP) ne correspondent pas.
+        udp_overlap = db.exec(
+            select(ChargingSession).where(
+                ChargingSession.source == "udp",
+                ChargingSession.start_time < p.end_time,
+                ChargingSession.end_time > p.start_time,
+            )
+        ).first()
+        if udp_overlap:
             duplicate_rows += 1
             continue
 
@@ -550,7 +589,7 @@ def update_tariff_config(body: TariffConfigIn, db: Session = Depends(get_session
     cfg = db.get(TariffConfig, 1) or TariffConfig(id=1)
     cfg.price_hc = body.price_hc
     cfg.price_hp = body.price_hp
-    cfg.updated_at = datetime.utcnow()
+    cfg.updated_at = datetime.now()
     db.add(cfg)
 
     # Crée automatiquement une période à partir d'aujourd'hui
@@ -593,7 +632,7 @@ def add_tariff_period(body: TariffPeriodIn, db: Session = Depends(get_session)):
         cfg = db.get(TariffConfig, 1) or TariffConfig(id=1)
         cfg.price_hc = body.price_hc
         cfg.price_hp = body.price_hp
-        cfg.updated_at = datetime.utcnow()
+        cfg.updated_at = datetime.now()
         db.add(cfg)
 
     db.commit()
@@ -642,7 +681,7 @@ def update_tariff_rule(body: TariffRuleIn, db: Session = Depends(get_session)):
     rule.full_hc_days = json.dumps(body.full_hc_days)
     rule.hc_windows   = json.dumps([w.model_dump() for w in body.hc_windows])
     rule.label        = body.label
-    rule.updated_at   = datetime.utcnow()
+    rule.updated_at   = datetime.now()
     db.add(rule)
     db.commit()
     db.refresh(rule)
@@ -696,7 +735,7 @@ def update_alert_config(body: AlertConfigIn, db: Session = Depends(get_session))
     alert.threshold_kwh = body.threshold_kwh
     alert.threshold_eur = body.threshold_eur
     alert.webhook_url   = body.webhook_url
-    alert.updated_at    = datetime.utcnow()
+    alert.updated_at    = datetime.now()
     db.add(alert)
     db.commit()
     db.refresh(alert)
@@ -716,7 +755,7 @@ async def check_alerts(db: Session = Depends(get_session)):
     if not alert or not alert.enabled or not alert.webhook_url:
         return {"sent": False, "reason": "Alertes désactivées ou webhook non configuré"}
 
-    current_month = datetime.utcnow().strftime("%Y-%m")
+    current_month = datetime.now().strftime("%Y-%m")
     if alert.last_alert_month == current_month:
         return {"sent": False, "reason": "Alerte déjà envoyée ce mois"}
 
@@ -958,6 +997,275 @@ def get_vehicle_image(vehicle_id: int, db: Session = Depends(get_session)):
 
     media_type = mimetypes.guess_type(str(img_path))[0] or "image/jpeg"
     return StreamingResponse(open(img_path, "rb"), media_type=media_type)
+
+
+# ── Bornes EVSE / UDP (V2) ────────────────────────────────────────────────────
+
+class ChargerOut(BaseModel):
+    id:             int
+    name:           str
+    ip:             str
+    serial:         str
+    src_port:       int
+    model:          str
+    firmware:       str
+    is_enabled:     bool
+    image_filename: str
+    last_seen:      Optional[datetime]
+    created_at:     datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ChargerIn(BaseModel):
+    name:       str
+    ip:         str       # Accepte IP ou FQDN (ex: morec.home.lan)
+    password:   str
+    serial:     str      = ""
+    src_port:   int      = 6186
+    model:      str      = ""
+    firmware:   str      = ""
+    is_enabled: bool     = True
+
+
+class ChargerTestIn(BaseModel):
+    ip:       str
+    password: str
+
+
+class ChargerStatusOut(BaseModel):
+    voltage:     Optional[float]
+    current:     Optional[float]
+    power_w:     Optional[float]
+    is_charging: bool
+    last_seen:   Optional[datetime]
+
+
+@app.get("/api/chargers", response_model=List[ChargerOut])
+def list_chargers(db: Session = Depends(get_session)):
+    """Liste toutes les bornes configurées."""
+    return db.exec(select(Charger).order_by(Charger.created_at)).all()
+
+
+@app.post("/api/chargers/{charger_id}/image", response_model=ChargerOut)
+async def upload_charger_image(
+    charger_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_session),
+):
+    """Upload de la photo du chargeur. Formats acceptés : JPEG, PNG, WebP."""
+    c = db.get(Charger, charger_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Borne introuvable")
+
+    allowed = {"image/jpeg", "image/png", "image/webp"}
+    content_type = file.content_type or ""
+    if content_type not in allowed:
+        raise HTTPException(status_code=400, detail="Format accepté : JPEG, PNG ou WebP")
+
+    ext = mimetypes.guess_extension(content_type) or ".jpg"
+    if ext == ".jpe":
+        ext = ".jpg"
+
+    if c.image_filename:
+        (IMAGES_DIR / c.image_filename).unlink(missing_ok=True)
+
+    filename = f"charger_{charger_id}{ext}"
+    (IMAGES_DIR / filename).write_bytes(await file.read())
+
+    c.image_filename = filename
+    db.commit()
+    db.refresh(c)
+    return c
+
+
+@app.get("/api/chargers/{charger_id}/image")
+def get_charger_image(charger_id: int, db: Session = Depends(get_session)):
+    """Sert la photo du chargeur depuis /app/data/images/."""
+    c = db.get(Charger, charger_id)
+    if not c or not c.image_filename:
+        raise HTTPException(status_code=404, detail="Pas d'image pour cette borne")
+
+    img_path = IMAGES_DIR / c.image_filename
+    if not img_path.exists():
+        raise HTTPException(status_code=404, detail="Fichier image introuvable")
+
+    media_type = mimetypes.guess_type(str(img_path))[0] or "image/jpeg"
+    return StreamingResponse(open(img_path, "rb"), media_type=media_type)
+
+
+@app.post("/api/chargers/test", response_model=dict)
+async def test_charger_pre_save(body: ChargerTestIn):
+    """
+    Teste la connexion UDP à une borne AVANT de l'enregistrer.
+    Retourne le numéro de série et le statut si la connexion réussit.
+
+    L'app EVSEMaster doit être fermée pendant ce test.
+    """
+    if _udp_lock.locked():
+        raise HTTPException(
+            status_code=409,
+            detail="Une session UDP est déjà en cours. Réessayez dans quelques secondes."
+        )
+    try:
+        async with _udp_lock:
+            result = await asyncio.to_thread(
+                udp_client.test_connection, body.ip, body.password
+            )
+        return result
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/chargers", response_model=ChargerOut)
+def create_charger(body: ChargerIn, db: Session = Depends(get_session)):
+    """Enregistre une nouvelle borne."""
+    charger = Charger(
+        name=body.name,
+        ip=body.ip,
+        password=body.password,
+        serial=body.serial,
+        src_port=body.src_port,
+        model=body.model,
+        firmware=body.firmware,
+        is_enabled=body.is_enabled,
+    )
+    db.add(charger)
+    db.commit()
+    db.refresh(charger)
+    return charger
+
+
+@app.put("/api/chargers/{charger_id}", response_model=ChargerOut)
+def update_charger(charger_id: int, body: ChargerIn, db: Session = Depends(get_session)):
+    c = db.get(Charger, charger_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Borne introuvable")
+    for field in ("name", "ip", "password", "serial", "src_port", "model", "firmware", "is_enabled"):
+        setattr(c, field, getattr(body, field))
+    db.commit()
+    db.refresh(c)
+    return c
+
+
+@app.delete("/api/chargers/{charger_id}")
+def delete_charger(charger_id: int, db: Session = Depends(get_session)):
+    c = db.get(Charger, charger_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Borne introuvable")
+    db.delete(c)
+    db.commit()
+    return {"ok": True}
+
+
+@app.post("/api/chargers/{charger_id}/test", response_model=dict)
+async def test_charger(charger_id: int, db: Session = Depends(get_session)):
+    """Teste la connexion UDP d'une borne enregistrée."""
+    c = db.get(Charger, charger_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Borne introuvable")
+    if _udp_lock.locked():
+        raise HTTPException(
+            status_code=409,
+            detail="Une session UDP est déjà en cours. Réessayez dans quelques secondes."
+        )
+    try:
+        async with _udp_lock:
+            result = await asyncio.to_thread(
+                udp_client.test_connection, c.ip, c.password
+            )
+        # Met à jour serial et src_port si obtenus
+        if result.get('serial'):
+            c.serial   = result['serial']
+            c.src_port = result['src_port']
+            c.last_seen = datetime.now()
+            db.commit()
+        return result
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/chargers/{charger_id}/status", response_model=ChargerStatusOut)
+async def get_charger_status(charger_id: int, db: Session = Depends(get_session)):
+    """
+    Récupère le statut temps réel d'une borne (tension, courant, puissance).
+    Effectue une session UDP complète (auth + requête statut).
+    """
+    c = db.get(Charger, charger_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Borne introuvable")
+    if not c.is_enabled:
+        raise HTTPException(status_code=400, detail="Borne désactivée")
+    if not c.serial:
+        raise HTTPException(
+            status_code=400,
+            detail="Numéro de série inconnu — testez d'abord la connexion."
+        )
+    if _udp_lock.locked():
+        raise HTTPException(
+            status_code=409,
+            detail="Une session UDP est déjà en cours. Réessayez dans quelques secondes."
+        )
+    try:
+        async with _udp_lock:
+            status = await asyncio.to_thread(
+                udp_client.get_status, c.ip, c.serial, c.password, c.src_port
+            )
+        c.last_seen = datetime.now()
+        db.commit()
+        return ChargerStatusOut(
+            voltage=status.get('voltage'),
+            current=status.get('current'),
+            power_w=status.get('power_w'),
+            is_charging=status.get('is_charging', False),
+            last_seen=c.last_seen,
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/chargers/active-charge")
+def get_active_charges():
+    """
+    Retourne les sessions de charge en cours avec énergie cumulée et durée.
+    Alimenté par charger_poller._active_charges (intégration trapèzes) + status_cache.
+    Rafraîchi côté client toutes les ~5s pendant une charge active.
+    """
+    now = datetime.now()
+    result = []
+    for cid, charge in charger_poller._active_charges.items():
+        duration_minutes = round((now - charge.start_time).total_seconds() / 60, 1)
+        energy_kwh = round(charge.energy_wh / 1000, 3)
+        live = charger_poller.status_cache.get(cid)
+        result.append({
+            "charger_id":       cid,
+            "energy_kwh":       energy_kwh,
+            "duration_minutes": duration_minutes,
+            "voltage":          live.voltage  if live else None,
+            "current":          live.current  if live else None,
+            "power_w":          live.power_w  if live else None,
+        })
+    return result
+
+
+@app.get("/api/chargers/live")
+def get_all_chargers_live():
+    """
+    Retourne le statut en cache de toutes les bornes (aucune requête UDP).
+    Mis à jour automatiquement par le poller de fond toutes les ~30s.
+    """
+    return {
+        str(cid): {
+            "voltage":     s.voltage,
+            "current":     s.current,
+            "power_w":     s.power_w,
+            "is_charging": s.is_charging,
+            "updated_at":  s.updated_at.isoformat() if s.updated_at else None,
+            "error":       s.error,
+        }
+        for cid, s in charger_poller.status_cache.items()
+    }
 
 
 @app.get("/api/health")
