@@ -539,6 +539,10 @@ git pull && docker compose up -d --build
 ### v1.7.1
 - [x] Fix overflow compteur énergie UDP 16 bits (% 65536) — énergie ne se fige plus en cours de session
 
+### v1.7.2
+- [x] Fix compteur UDP — sanity check physique (reset compteur vs overflow 16 bits) : delta corrigé validé par durée × puissance max
+- [x] Édition et suppression de sessions via l'UI (énergie, dates, recalcul tarif automatique)
+
 ### À venir
 - [ ] Support du tarif Tempo EDF (Bleu/Blanc/Rouge) — nécessite intégration API RTE
 - [ ] Comparaison coût électrique vs thermique (€/100km)
