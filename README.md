@@ -553,6 +553,9 @@ git pull && docker compose up -d --build
 ### v1.7.5
 - [x] Sanity-check anti-saut : delta compteur aberrant (ex. changement d'unité après restart) ignoré et compteur réinitialisé
 
+### v1.7.6
+- [x] Édition sessions — bouton modifier limité aux sessions UDP (les sessions XLSX sont fiables par nature)
+
 ### À venir
 - [ ] Support du tarif Tempo EDF (Bleu/Blanc/Rouge) — nécessite intégration API RTE
 - [ ] Comparaison coût électrique vs thermique (€/100km)
