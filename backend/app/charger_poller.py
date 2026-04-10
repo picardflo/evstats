@@ -16,12 +16,12 @@ Architecture :
   - GET /api/chargers/active-charge expose l'énergie+durée en temps réel
 
 Mesure de l'énergie (par ordre de priorité) :
-  1. Compteur hardware absolu (bytes [15:17] du payload 0x0004, Wh total vie de
-     la borne) — exact même si des cycles de poll sont manqués (app EVSEMaster
-     concurrente, broadcast absent, etc.).
-     Formule : energy_wh = energy_wh_offset + (counter_actuel - counter_début)
-     L'offset préserve l'énergie accumulée avant la première lecture du compteur
-     (notamment après un restart avec restauration depuis JSON).
+  1. Compteur hardware (bytes [15:17] du payload 0x0004, uint16 Wh).
+     Suivi incrémental : delta = counter_N - counter_N-1 (entre deux polls).
+     L'overflow 16 bits (max 65535 Wh) est détecté par sanity-check temporel :
+       corrected = delta + 65536, valide si 0 < corrected ≤ puissance_max × Δt × 1.2
+     Cette approche supporte N overflows sur sessions longues (nuit entière, etc.)
+     sans jamais "perdre" de tour de compteur.
   2. Intégration trapèzes : energy += (P_n-1 + P_n) / 2 × Δt
      Repli si le compteur hardware n'est pas disponible dans le payload.
 
@@ -85,18 +85,16 @@ class ChargerStatusEntry:
 @dataclass
 class ActiveCharge:
     """État d'une session de charge en cours."""
-    charger_id:              int
-    start_time:              datetime
-    energy_wh:               float            = 0.0
-    last_poll_time:          Optional[datetime] = None
-    last_power_w:            float            = 0.0
-    zero_current_count:      int              = 0
-    # Compteur hardware absolu (Wh total vie de la borne) relevé au premier poll.
-    # energy_wh = energy_wh_offset + (compteur_actuel - energy_counter_start_wh)
-    energy_counter_start_wh: Optional[int]   = None
-    # Énergie déjà accumulée avant que le compteur hardware soit disponible
-    # (ex : valeur restaurée depuis JSON après un restart).
-    energy_wh_offset:        float            = 0.0
+    charger_id:         int
+    start_time:         datetime
+    energy_wh:          float             = 0.0
+    last_poll_time:     Optional[datetime] = None
+    last_power_w:       float             = 0.0
+    zero_current_count: int               = 0
+    # Dernière valeur du compteur hardware lue (uint16 Wh).
+    # Le delta incrémental (counter_N - counter_N-1) est ajouté à energy_wh à
+    # chaque poll — cette approche gère correctement N overflows 16 bits.
+    last_counter_wh:    Optional[int]     = None
 
 
 @dataclass
@@ -156,12 +154,11 @@ def _persist_active_charges():
     try:
         data = {
             str(cid): {
-                "charger_id":              c.charger_id,
-                "start_time":              c.start_time.isoformat(),
-                "energy_wh":               c.energy_wh,
-                "last_power_w":            c.last_power_w,
-                "energy_counter_start_wh": c.energy_counter_start_wh,
-                "energy_wh_offset":        c.energy_wh_offset,
+                "charger_id":     c.charger_id,
+                "start_time":     c.start_time.isoformat(),
+                "energy_wh":      c.energy_wh,
+                "last_power_w":   c.last_power_w,
+                "last_counter_wh": c.last_counter_wh,
             }
             for cid, c in _active_charges.items()
         }
@@ -178,15 +175,12 @@ def _restore_active_charges():
         data = json.loads(_ACTIVE_CHARGES_FILE.read_text())
         for cid_str, d in data.items():
             cid = int(cid_str)
-            energy_wh = d["energy_wh"]
             _active_charges[cid] = ActiveCharge(
                 charger_id=d["charger_id"],
                 start_time=datetime.fromisoformat(d["start_time"]),
-                energy_wh=energy_wh,
+                energy_wh=d["energy_wh"],
                 last_power_w=d.get("last_power_w", 0.0),
-                energy_counter_start_wh=d.get("energy_counter_start_wh"),
-                # Si pas de compteur hardware connu, l'énergie restaurée sert de base
-                energy_wh_offset=d.get("energy_wh_offset", energy_wh if d.get("energy_counter_start_wh") is None else 0.0),
+                last_counter_wh=d.get("last_counter_wh"),
             )
         print(f"[poller] Sessions actives restaurées : {list(_active_charges.keys())}", flush=True)
     except Exception as e:
@@ -261,31 +255,28 @@ def _process_status(charger: ChargerSnapshot, status: dict, poll_time: datetime)
     if cid in _active_charges:
         charge = _active_charges[cid]
 
-        # Énergie : compteur hardware en priorité (exact même si cycles manqués),
+        # Énergie : compteur hardware en priorité (delta incrémental poll-à-poll),
         # sinon repli sur intégration trapèzes.
         if counter_wh is not None:
-            if charge.energy_counter_start_wh is None:
-                # Premier poll avec compteur disponible → initialiser le référentiel
-                # en préservant l'énergie déjà accumulée (ex: restaurée depuis JSON)
-                charge.energy_wh_offset = charge.energy_wh
-                charge.energy_counter_start_wh = counter_wh
+            if charge.last_counter_wh is None:
+                # Premier poll avec compteur disponible → initialiser sans ajouter d'énergie
+                # (energy_wh peut être non-nul si restauré depuis JSON)
+                charge.last_counter_wh = counter_wh
             else:
-                delta = counter_wh - charge.energy_counter_start_wh
+                delta = counter_wh - charge.last_counter_wh
                 if delta < 0:
-                    # Compteur en baisse : overflow 16 bits ou reset/bruit
+                    # Compteur en baisse : overflow 16 bits ou paquet périmé/bruit
                     corrected = delta + 65536
                     # Overflow légitime ssi la valeur corrigée est physiquement possible
-                    # (ne peut pas dépasser puissance_max × durée_session × marge)
-                    elapsed_h = (poll_time - charge.start_time).total_seconds() / 3600
-                    max_wh = max(charge.last_power_w, 7400) * elapsed_h * 1.2
-                    if 0 < corrected <= max_wh:
+                    # sur l'intervalle depuis le DERNIER poll (pas depuis le début de session)
+                    dt_h = (poll_time - (charge.last_poll_time or charge.start_time)).total_seconds() / 3600
+                    max_delta = max(charge.last_power_w, 7400) * dt_h * 1.2
+                    if 0 < corrected <= max_delta:
                         delta = corrected       # overflow réel
                     else:
-                        # Reset compteur : recaler le référentiel sans perdre l'énergie accumulée
-                        charge.energy_wh_offset = charge.energy_wh
-                        charge.energy_counter_start_wh = counter_wh
-                        delta = 0
-                charge.energy_wh = charge.energy_wh_offset + float(delta)
+                        delta = 0              # bruit/paquet périmé — ignorer ce cycle
+                charge.energy_wh += float(delta)
+                charge.last_counter_wh = counter_wh
         else:
             # Repli trapèzes si compteur indisponible
             if charge.last_poll_time:
@@ -313,7 +304,7 @@ def _process_status(charger: ChargerSnapshot, status: dict, poll_time: datetime)
             start_time=poll_time,
             last_poll_time=poll_time,
             last_power_w=power_w,
-            energy_counter_start_wh=counter_wh,  # None si pas encore dispo
+            last_counter_wh=counter_wh,  # None si compteur pas encore dispo
         )
         _persist_active_charges()
 
