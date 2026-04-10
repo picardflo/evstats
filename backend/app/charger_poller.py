@@ -19,7 +19,9 @@ Mesure de l'énergie (par ordre de priorité) :
   1. Compteur hardware (bytes [9:13] du payload 0x0004, uint32 × 10 Wh).
      Suivi incrémental : delta = counter_N - counter_N-1 (entre deux polls).
      Le compteur 32 bits couvre ~42 TWh — l'overflow est impossible en pratique.
-     Si delta < 0 (paquet périmé ou bruit), le cycle est ignoré (delta = 0).
+     Si delta < 0 → paquet périmé/bruit, ignoré.
+     Si delta > puissance_max × Δt × 2 → saut aberrant (ex. changement d'unité
+     après restart), ignoré et compteur réinitialisé à la valeur courante.
   2. Intégration trapèzes : energy += (P_n-1 + P_n) / 2 × Δt
      Repli si le compteur hardware n'est pas disponible dans le payload.
 
@@ -266,6 +268,14 @@ def _process_status(charger: ChargerSnapshot, status: dict, poll_time: datetime)
                     # Compteur 32 bits ne peut pas réellement déborder (~42 TWh)
                     # → delta négatif = paquet périmé ou bruit, ignorer ce cycle
                     delta = 0
+                elif delta > 0:
+                    # Sanity-check : delta ne peut pas dépasser la puissance max × Δt
+                    # Protège contre les sauts aberrants (changement d'unité, remplacement borne…)
+                    dt_h = (poll_time - (charge.last_poll_time or charge.start_time)).total_seconds() / 3600
+                    max_plausible = max(charge.last_power_w, 22000) * dt_h * 2
+                    if delta > max_plausible:
+                        print(f"[poller] Saut compteur aberrant ({delta} Wh en {dt_h*60:.1f}min) — réinitialisation", flush=True)
+                        delta = 0
                 charge.energy_wh += float(delta)
                 charge.last_counter_wh = counter_wh
         else:
