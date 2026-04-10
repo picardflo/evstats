@@ -43,6 +43,15 @@ export async function fetchSessions(params) {
   return data
 }
 
+export async function patchSession(id, payload) {
+  const { data } = await api.patch(`/sessions/${id}`, payload)
+  return data
+}
+
+export async function deleteSession(id) {
+  await api.delete(`/sessions/${id}`)
+}
+
 /**
  * Construit l'URL de téléchargement CSV avec les filtres actifs.
  * Utilisé directement dans un attribut href (pas de fetch).

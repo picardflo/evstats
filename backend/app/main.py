@@ -530,6 +530,51 @@ def export_sessions_csv(
     )
 
 
+class SessionPatch(BaseModel):
+    energy_kwh: Optional[float] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+
+
+@app.patch("/api/sessions/{session_id}", response_model=SessionOut)
+def patch_session(session_id: int, body: SessionPatch, db: Session = Depends(get_session)):
+    """Corrige l'énergie et/ou les dates d'une session."""
+    s = db.get(ChargingSession, session_id)
+    if not s:
+        raise HTTPException(status_code=404, detail="Session introuvable")
+
+    if body.start_time is not None:
+        s.start_time = body.start_time
+    if body.end_time is not None:
+        s.end_time = body.end_time
+        s.duration_minutes = (s.end_time - s.start_time).total_seconds() / 60
+    if body.energy_kwh is not None:
+        s.energy_kwh = body.energy_kwh
+
+    # Recalcul tarif
+    price_hc, price_hp = get_session_prices(s.start_time, db)
+    rule_config = get_tariff_rule_config(db)
+    tariff = compute_tariff(s.start_time, s.end_time, s.energy_kwh, rule=rule_config)
+    s.hc_kwh = tariff.hc_kwh
+    s.hp_kwh = tariff.hp_kwh
+    s.cost_eur = round(tariff.hc_kwh * price_hc + tariff.hp_kwh * price_hp, 4)
+
+    db.add(s)
+    db.commit()
+    db.refresh(s)
+    return s
+
+
+@app.delete("/api/sessions/{session_id}", status_code=204)
+def delete_session(session_id: int, db: Session = Depends(get_session)):
+    """Supprime une session."""
+    s = db.get(ChargingSession, session_id)
+    if not s:
+        raise HTTPException(status_code=404, detail="Session introuvable")
+    db.delete(s)
+    db.commit()
+
+
 # ── Stats ─────────────────────────────────────────────────────────────────────
 
 @app.get("/api/stats/daily", response_model=List[DailyStats])
