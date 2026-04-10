@@ -236,11 +236,13 @@ export default function Sessions() {
                     </TableCell>
                     <TableCell align="center">
                       <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-                        <Tooltip title="Modifier">
-                          <IconButton size="small" onClick={() => openEdit(s)}>
-                            <EditIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
+                        {s.source === 'udp' && (
+                          <Tooltip title="Modifier">
+                            <IconButton size="small" onClick={() => openEdit(s)}>
+                              <EditIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
                         <Tooltip title="Supprimer">
                           <IconButton size="small" color="error" onClick={() => setDeleteTarget(s)}>
                             <DeleteIcon fontSize="small" />
