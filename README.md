@@ -536,6 +536,9 @@ git pull && docker compose up -d --build
 - [x] Autocomplete véhicule à la saisie : 27 modèles marché FR avec pré-remplissage automatique (batterie + conso + 6 valeurs WLTP)
 - [x] Script `scrape_ev_database.py` pour régénération de la base véhicules
 
+### v1.7.1
+- [x] Fix overflow compteur énergie UDP 16 bits (% 65536) — énergie ne se fige plus en cours de session
+
 ### À venir
 - [ ] Support du tarif Tempo EDF (Bleu/Blanc/Rouge) — nécessite intégration API RTE
 - [ ] Comparaison coût électrique vs thermique (€/100km)
