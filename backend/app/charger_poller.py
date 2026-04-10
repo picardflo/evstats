@@ -270,9 +270,9 @@ def _process_status(charger: ChargerSnapshot, status: dict, poll_time: datetime)
                 charge.energy_wh_offset = charge.energy_wh
                 charge.energy_counter_start_wh = counter_wh
             else:
-                delta = counter_wh - charge.energy_counter_start_wh
-                if delta >= 0:  # ignorer les overflows ou resets de compteur
-                    charge.energy_wh = charge.energy_wh_offset + float(delta)
+                # % 65536 gère l'overflow du compteur 16 bits et les coupures UDP
+                delta = (counter_wh - charge.energy_counter_start_wh) % 65536
+                charge.energy_wh = charge.energy_wh_offset + float(delta)
         else:
             # Repli trapèzes si compteur indisponible
             if charge.last_poll_time:
