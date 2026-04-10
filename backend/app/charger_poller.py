@@ -270,8 +270,21 @@ def _process_status(charger: ChargerSnapshot, status: dict, poll_time: datetime)
                 charge.energy_wh_offset = charge.energy_wh
                 charge.energy_counter_start_wh = counter_wh
             else:
-                # % 65536 gère l'overflow du compteur 16 bits et les coupures UDP
-                delta = (counter_wh - charge.energy_counter_start_wh) % 65536
+                delta = counter_wh - charge.energy_counter_start_wh
+                if delta < 0:
+                    # Compteur en baisse : overflow 16 bits ou reset/bruit
+                    corrected = delta + 65536
+                    # Overflow légitime ssi la valeur corrigée est physiquement possible
+                    # (ne peut pas dépasser puissance_max × durée_session × marge)
+                    elapsed_h = (poll_time - charge.start_time).total_seconds() / 3600
+                    max_wh = max(charge.last_power_w, 7400) * elapsed_h * 1.2
+                    if 0 < corrected <= max_wh:
+                        delta = corrected       # overflow réel
+                    else:
+                        # Reset compteur : recaler le référentiel sans perdre l'énergie accumulée
+                        charge.energy_wh_offset = charge.energy_wh
+                        charge.energy_counter_start_wh = counter_wh
+                        delta = 0
                 charge.energy_wh = charge.energy_wh_offset + float(delta)
         else:
             # Repli trapèzes si compteur indisponible
