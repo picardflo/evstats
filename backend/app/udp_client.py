@@ -100,8 +100,11 @@ def _parse_status_payload(payload: bytes) -> dict:
     if len(payload) >= 9:
         raw_p = struct.unpack('>H', payload[7:9])[0]
         result['power_w'] = float(raw_p)  # valeur déjà en watts
-    if len(payload) >= 17:
-        result['energy_counter_wh'] = struct.unpack('>H', payload[15:17])[0]
+    if len(payload) >= 13:
+        # Compteur énergie 32 bits (bytes [9:13], big-endian) en unités de 10 Wh.
+        # Validé empiriquement sur Morec MC20CAPP : +14 counts = 140 Wh en 2 min à 4200W.
+        # Le champ [15:17] (uint16) était incorrect — il fluctue indépendamment de l'énergie réelle.
+        result['energy_counter_wh'] = struct.unpack('>I', payload[9:13])[0] * 10
     result['is_charging'] = result.get('current', 0) > 0.1
     return result
 

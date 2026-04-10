@@ -16,12 +16,10 @@ Architecture :
   - GET /api/chargers/active-charge expose l'énergie+durée en temps réel
 
 Mesure de l'énergie (par ordre de priorité) :
-  1. Compteur hardware (bytes [15:17] du payload 0x0004, uint16 Wh).
+  1. Compteur hardware (bytes [9:13] du payload 0x0004, uint32 × 10 Wh).
      Suivi incrémental : delta = counter_N - counter_N-1 (entre deux polls).
-     L'overflow 16 bits (max 65535 Wh) est détecté par sanity-check temporel :
-       corrected = delta + 65536, valide si 0 < corrected ≤ puissance_max × Δt × 1.2
-     Cette approche supporte N overflows sur sessions longues (nuit entière, etc.)
-     sans jamais "perdre" de tour de compteur.
+     Le compteur 32 bits couvre ~42 TWh — l'overflow est impossible en pratique.
+     Si delta < 0 (paquet périmé ou bruit), le cycle est ignoré (delta = 0).
   2. Intégration trapèzes : energy += (P_n-1 + P_n) / 2 × Δt
      Repli si le compteur hardware n'est pas disponible dans le payload.
 
@@ -91,9 +89,9 @@ class ActiveCharge:
     last_poll_time:     Optional[datetime] = None
     last_power_w:       float             = 0.0
     zero_current_count: int               = 0
-    # Dernière valeur du compteur hardware lue (uint16 Wh).
+    # Dernière valeur du compteur hardware lue (uint32 × 10 Wh = Wh absolu).
     # Le delta incrémental (counter_N - counter_N-1) est ajouté à energy_wh à
-    # chaque poll — cette approche gère correctement N overflows 16 bits.
+    # chaque poll. Overflow impossible avec un compteur 32 bits (~42 TWh).
     last_counter_wh:    Optional[int]     = None
 
 
@@ -265,16 +263,9 @@ def _process_status(charger: ChargerSnapshot, status: dict, poll_time: datetime)
             else:
                 delta = counter_wh - charge.last_counter_wh
                 if delta < 0:
-                    # Compteur en baisse : overflow 16 bits ou paquet périmé/bruit
-                    corrected = delta + 65536
-                    # Overflow légitime ssi la valeur corrigée est physiquement possible
-                    # sur l'intervalle depuis le DERNIER poll (pas depuis le début de session)
-                    dt_h = (poll_time - (charge.last_poll_time or charge.start_time)).total_seconds() / 3600
-                    max_delta = max(charge.last_power_w, 7400) * dt_h * 1.2
-                    if 0 < corrected <= max_delta:
-                        delta = corrected       # overflow réel
-                    else:
-                        delta = 0              # bruit/paquet périmé — ignorer ce cycle
+                    # Compteur 32 bits ne peut pas réellement déborder (~42 TWh)
+                    # → delta négatif = paquet périmé ou bruit, ignorer ce cycle
+                    delta = 0
                 charge.energy_wh += float(delta)
                 charge.last_counter_wh = counter_wh
         else:
