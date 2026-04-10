@@ -552,7 +552,7 @@ def patch_session(session_id: int, body: SessionPatch, db: Session = Depends(get
         s.energy_kwh = body.energy_kwh
 
     # Recalcul tarif
-    price_hc, price_hp = get_session_prices(s.start_time, db)
+    price_hc, price_hp = get_tariff_for_date(db, s.start_time.date())
     rule_config = get_tariff_rule_config(db)
     tariff = compute_tariff(s.start_time, s.end_time, s.energy_kwh, rule=rule_config)
     s.hc_kwh = tariff.hc_kwh
