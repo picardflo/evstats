@@ -274,7 +274,7 @@ Borne  → StatusResponse 0x0004
 | [1:3] | uint16 BE | ×0.1 | Tension (V) |
 | [3:5] | uint16 BE | ×0.01 | Courant (A) |
 | [7:9] | uint16 BE | ×1.0 | Puissance (W) |
-| [15:17] | uint16 BE | ×1.0 | Compteur énergie absolu (Wh, total vie de la borne) |
+| [9:13] | uint32 BE | ×10 Wh | Compteur énergie absolu (Wh, total vie de la borne) |
 
 > **Contrainte** : une seule session UDP à la fois. L'application EVSEMaster mobile doit être fermée pendant les requêtes du poller. Le verrou `asyncio.Lock` partagé empêche les requêtes manuelles (bouton Rafraîchir) et le poller de s'exécuter simultanément.
 
@@ -519,7 +519,7 @@ git pull && docker compose up -d --build
 
 ### v1.6.1
 - [x] Énergie session et durée en temps réel dans la bannière (rafraîchi toutes les 5 s)
-- [x] Compteur énergie hardware borne (payload [15:17]) — précis même si cycles manqués
+- [x] Compteur énergie hardware borne (payload [9:13], uint32 × 10 Wh) — précis même si cycles manqués
 - [x] Persistance restart-proof : `active_charges.json` dans le volume Docker
 - [x] Timezone Europe/Paris : `TZ=Europe/Paris` dans docker-compose + `datetime.now()`
 - [x] Script migration one-shot UTC → Europe/Paris pour les sessions existantes
@@ -543,6 +543,16 @@ git pull && docker compose up -d --build
 - [x] Fix compteur UDP — sanity check physique (reset compteur vs overflow 16 bits) : delta corrigé validé par durée × puissance max
 - [x] Édition et suppression de sessions via l'UI (énergie, dates, recalcul tarif automatique)
 
+### v1.7.3
+- [x] Compteur énergie delta incrémental poll-à-poll (counter_N − counter_N-1) — survit aux cycles manqués sans accumulation d'erreur
+
+### v1.7.4
+- [x] Fix compteur énergie UDP — champ correct bytes [9:13] uint32 × 10 Wh (le champ [15:17] uint16 était erroné)
+- [x] Suppression de la gestion overflow 16 bits (inutile avec un compteur 32 bits ~42 TWh)
+
+### v1.7.5
+- [x] Sanity-check anti-saut : delta compteur aberrant (ex. changement d'unité après restart) ignoré et compteur réinitialisé
+
 ### À venir
 - [ ] Support du tarif Tempo EDF (Bleu/Blanc/Rouge) — nécessite intégration API RTE
 - [ ] Comparaison coût électrique vs thermique (€/100km)
@@ -553,8 +563,7 @@ git pull && docker compose up -d --build
 ## Contraintes connues
 
 - **Une seule session UDP à la fois** : l'app EVSEMaster mobile doit être fermée pendant les requêtes du poller (contrainte protocolaire). Les deux ne peuvent pas se connecter simultanément à la borne.
-- **Broadcasts intermittents** : si EVSEMaster se reconnecte en arrière-plan, le poller manque des cycles. L'énergie est néanmoins correcte grâce au compteur hardware absolu.
-- **Compteur hardware uint16** : overflow à 65 535 Wh (65,5 kWh) par session — suffisant pour toute session domestique usuelle.
+- **Broadcasts intermittents** : si EVSEMaster se reconnecte en arrière-plan, le poller manque des cycles. L'énergie est néanmoins correcte grâce au compteur hardware absolu (delta entre deux polls réussis).
 - **Tarif Tempo EDF non supporté** : nécessite l'API RTE en temps réel pour le calendrier des couleurs de jours.
 
 ---
