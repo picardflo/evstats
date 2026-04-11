@@ -198,8 +198,8 @@ def _restore_active_charges():
 def _save_charge_session(charger: ChargerSnapshot, charge: ActiveCharge, end_time: datetime):
     """Enregistre une session de charge UDP terminée en base de données."""
     energy_kwh = round(charge.energy_wh / 1000, 4)
-    if energy_kwh < 0.01:
-        print(f"[poller] Session trop courte ({energy_kwh:.4f} kWh) sur borne {charger.id} — ignorée", flush=True)
+    if energy_kwh < 0.1:
+        print(f"[poller] Session ignorée ({energy_kwh:.4f} kWh < 0.1 kWh) sur borne {charger.id}", flush=True)
         return
 
     duration_minutes = round((end_time - charge.start_time).total_seconds() / 60, 1)

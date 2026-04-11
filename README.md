@@ -560,6 +560,9 @@ git pull && docker compose up -d --build
 - [x] Confirmation début de charge : 2 lectures consécutives > 0.5A requises (symétrique avec la fin)
 - [x] Élimine les micro-sessions fantômes sur les cycles de rééquilibrage post-charge
 
+### v1.7.8
+- [x] Seuil minimum d'énergie relevé à 0.1 kWh — filtre les micro-sessions DC-DC (charge batterie 12V accessoire)
+
 ### À venir
 - [ ] Support du tarif Tempo EDF (Bleu/Blanc/Rouge) — nécessite intégration API RTE
 - [ ] Comparaison coût électrique vs thermique (€/100km)
