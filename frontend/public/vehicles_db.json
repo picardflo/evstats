@@ -183,6 +183,20 @@
   },
   {
     "brand": "MG",
+    "model": "MG4 Electric 51 kWh",
+    "url": "https://ev-database.org/car/1707/MG-MG4-Electric-51-kWh",
+    "years": "2022-2026",
+    "battery_kwh": 50.8,
+    "wltp_winter_city_wh_per_km": 172.0,
+    "wltp_winter_highway_wh_per_km": 242.0,
+    "wltp_winter_mixed_wh_per_km": 203.0,
+    "wltp_summer_city_wh_per_km": 114.0,
+    "wltp_summer_highway_wh_per_km": 185.0,
+    "wltp_summer_mixed_wh_per_km": 147.0,
+    "consumption_wh_per_km": 147.0
+  },
+  {
+    "brand": "MG",
     "model": "MG4 Electric 64 kWh",
     "url": "https://ev-database.org/car/1708/MG-MG4-Electric-64-kWh",
     "years": "Available since October 2022",
@@ -194,6 +208,20 @@
     "wltp_summer_highway_wh_per_km": 187.0,
     "wltp_summer_mixed_wh_per_km": 149.0,
     "consumption_wh_per_km": 149.0
+  },
+  {
+    "brand": "MG",
+    "model": "MGS5 EV 64 kWh",
+    "url": "https://ev-database.org/car/3147/MG-MGS5-EV-64-kWh",
+    "years": "2025-2026",
+    "battery_kwh": 62.1,
+    "wltp_winter_city_wh_per_km": 173.0,
+    "wltp_winter_highway_wh_per_km": 244.0,
+    "wltp_winter_mixed_wh_per_km": 204.0,
+    "wltp_summer_city_wh_per_km": 115.0,
+    "wltp_summer_highway_wh_per_km": 188.0,
+    "wltp_summer_mixed_wh_per_km": 150.0,
+    "consumption_wh_per_km": 150.0
   },
   {
     "brand": "MG",
