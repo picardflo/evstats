@@ -25,9 +25,11 @@ Mesure de l'énergie (par ordre de priorité) :
   2. Intégration trapèzes : energy += (P_n-1 + P_n) / 2 × Δt
      Repli si le compteur hardware n'est pas disponible dans le payload.
 
-Détection fin de session :
-  - 3 lectures consécutives avec courant < 0.1A → fin confirmée
-  - Évite les faux négatifs sur brèves coupures de courant
+Détection début/fin de session :
+  - Début : 2 lectures consécutives > 0.5A → début confirmé
+  - Fin   : 3 lectures consécutives < 0.1A → fin confirmée
+  - Symétrie intentionnelle : évite les micro-sessions sur les cycles de
+    rééquilibrage post-charge (1 pic isolé ne déclenche plus de session).
 
 Persistance (restart-proof) :
   - _active_charges est sauvegardé dans /app/data/active_charges.json
@@ -55,9 +57,10 @@ _ACTIVE_CHARGES_FILE = Path("/app/data/active_charges.json")
 
 # ── Seuils ────────────────────────────────────────────────────────────────────
 
-CHARGE_START_A      = 0.5   # Courant min pour démarrer une session (A)
-CHARGE_END_A        = 0.1   # Courant max pour considérer fin de charge (A)
-CHARGE_END_CONFIRMS = 3     # Lectures consécutives à 0 pour confirmer la fin
+CHARGE_START_A        = 0.5   # Courant min pour démarrer une session (A)
+CHARGE_END_A          = 0.1   # Courant max pour considérer fin de charge (A)
+CHARGE_START_CONFIRMS = 2     # Lectures consécutives > seuil pour confirmer le début
+CHARGE_END_CONFIRMS   = 3     # Lectures consécutives à 0 pour confirmer la fin
 POLL_IDLE_S         = 30    # Pause entre polls en veille (s)
 POLL_CHARGING_S     = 0     # Pas de pause supplémentaire pendant la charge
 
@@ -115,6 +118,9 @@ status_cache: Dict[int, ChargerStatusEntry] = {}
 
 # Sessions de charge en cours
 _active_charges: Dict[int, ActiveCharge] = {}
+
+# Compteur de confirmations de début (lectures consécutives > CHARGE_START_A)
+_start_pending: Dict[int, int] = {}
 
 # Tâche asyncio
 _poller_task: Optional[asyncio.Task] = None
@@ -293,21 +299,31 @@ def _process_status(charger: ChargerSnapshot, status: dict, poll_time: datetime)
                 print(f"[poller] Fin de charge confirmée sur borne {cid} ({charge.energy_wh:.3f} Wh)", flush=True)
                 _save_charge_session(charger, charge, poll_time)
                 del _active_charges[cid]
+                _start_pending.pop(cid, None)
                 _persist_active_charges()
         else:
             charge.zero_current_count = 0
             _persist_active_charges()
 
     elif current > CHARGE_START_A:
-        print(f"[poller] Début de charge détecté sur borne {cid} ({current:.2f} A)", flush=True)
-        _active_charges[cid] = ActiveCharge(
-            charger_id=cid,
-            start_time=poll_time,
-            last_poll_time=poll_time,
-            last_power_w=power_w,
-            last_counter_wh=counter_wh,  # None si compteur pas encore dispo
-        )
-        _persist_active_charges()
+        # Confirmation du début : N lectures consécutives > seuil avant de créer la session
+        _start_pending[cid] = _start_pending.get(cid, 0) + 1
+        if _start_pending[cid] >= CHARGE_START_CONFIRMS:
+            print(f"[poller] Début de charge confirmé sur borne {cid} ({current:.2f} A, {_start_pending[cid]} lectures)", flush=True)
+            _start_pending.pop(cid, None)
+            _active_charges[cid] = ActiveCharge(
+                charger_id=cid,
+                start_time=poll_time,
+                last_poll_time=poll_time,
+                last_power_w=power_w,
+                last_counter_wh=counter_wh,
+            )
+            _persist_active_charges()
+        else:
+            print(f"[poller] Début de charge en attente borne {cid} ({_start_pending[cid]}/{CHARGE_START_CONFIRMS})", flush=True)
+    else:
+        # Courant nul hors session → réinitialiser le compteur de confirmation
+        _start_pending.pop(cid, None)
 
 
 # ── Poll d'une borne ──────────────────────────────────────────────────────────
