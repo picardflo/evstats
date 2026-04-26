@@ -30,6 +30,7 @@ Two data acquisition modes are supported:
 - Dashboard: KPIs, charts, monthly ranking, yearly summary
 - Tariff history with validity periods (recalculate at any time)
 - Consumption alerts via webhook (ntfy, Slack, Discord…)
+- **Awtrix3 clock notifications**: real-time charge events (start / live progress / end) configurable from the UI
 - Monthly PDF reports
 - Vehicle page: specs, photo, cost per 100 km
 - Hourly frequency chart
@@ -562,6 +563,14 @@ git pull && docker compose up -d --build
 
 ### v1.7.8
 - [x] Seuil minimum d'énergie relevé à 0.1 kWh — filtre les micro-sessions DC-DC (charge batterie 12V accessoire)
+
+### v1.8.0
+- [x] Notifications horloge **Awtrix3** configurables depuis la page Alertes
+- [x] Début de charge : notification éphémère (couleur verte, réveil écran)
+- [x] Charge en cours : app persistante dans la rotation de l'horloge (énergie + durée), mise à jour toutes les N minutes (configurable)
+- [x] Fin de charge : suppression de l'app + notification hold (orange, reste jusqu'à interaction)
+- [x] Bouton "Tester la connexion" depuis l'interface
+- [x] URL et intervalle configurables sans redéploiement (stockés en base, modifiables à chaud)
 
 ### À venir
 - [ ] Support du tarif Tempo EDF (Bleu/Blanc/Rouge) — nécessite intégration API RTE

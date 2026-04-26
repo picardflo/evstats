@@ -195,3 +195,7 @@ class AlertConfig(SQLModel, table=True):
     webhook_url:      str      = Field(default="")    # URL webhook de notification
     last_alert_month: str      = Field(default="")    # Format "YYYY-MM"
     updated_at:       datetime = Field(default_factory=datetime.now)
+    # Horloge Awtrix3 — notifications temps réel des sessions de charge (v1.8.0)
+    awtrix_enabled:             bool = Field(default=False)
+    awtrix_url:                 str  = Field(default="")   # ex: http://awtrix.home.lan
+    awtrix_update_interval_min: int  = Field(default=30)   # minutes entre deux updates

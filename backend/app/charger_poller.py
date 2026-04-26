@@ -47,9 +47,10 @@ from typing import Dict, Optional
 from sqlmodel import Session, select
 
 from .database import engine
-from .models import Charger, ChargingSession, TariffPeriod, TariffRule
+from .models import AlertConfig, Charger, ChargingSession, TariffPeriod, TariffRule
 from .tariff import TariffRuleConfig, HcWindow, compute_tariff, DEFAULT_PRICE_HC, DEFAULT_PRICE_HP
 from . import udp_client
+from . import awtrix_notifier
 
 # Fichier de persistance des sessions actives (survit aux restarts)
 _ACTIVE_CHARGES_FILE = Path("/app/data/active_charges.json")
@@ -98,6 +99,8 @@ class ActiveCharge:
     # Le delta incrémental (counter_N - counter_N-1) est ajouté à energy_wh à
     # chaque poll. Overflow impossible avec un compteur 32 bits (~42 TWh).
     last_counter_wh:    Optional[int]     = None
+    # Dernier envoi de mise à jour Awtrix3 (non persisté — se réinitialise au restart)
+    last_awtrix_update: Optional[datetime] = None
 
 
 @dataclass
@@ -195,12 +198,12 @@ def _restore_active_charges():
 
 # ── Sauvegarde de session ─────────────────────────────────────────────────────
 
-def _save_charge_session(charger: ChargerSnapshot, charge: ActiveCharge, end_time: datetime):
-    """Enregistre une session de charge UDP terminée en base de données."""
+def _save_charge_session(charger: ChargerSnapshot, charge: ActiveCharge, end_time: datetime) -> Optional[float]:
+    """Enregistre une session de charge UDP terminée en base de données. Retourne cost_eur ou None si ignorée."""
     energy_kwh = round(charge.energy_wh / 1000, 4)
     if energy_kwh < 0.1:
         print(f"[poller] Session ignorée ({energy_kwh:.4f} kWh < 0.1 kWh) sur borne {charger.id}", flush=True)
-        return
+        return None
 
     duration_minutes = round((end_time - charge.start_time).total_seconds() / 60, 1)
     record_id = f"UDP-{charger.id}-{charge.start_time.strftime('%Y%m%d%H%M%S')}"
@@ -237,13 +240,15 @@ def _save_charge_session(charger: ChargerSnapshot, charge: ActiveCharge, end_tim
         print(f"[poller] Session enregistrée : borne={charger.name} "
               f"{charge.start_time.strftime('%H:%M')}→{end_time.strftime('%H:%M')} "
               f"{energy_kwh:.3f} kWh {cost_eur:.4f} €", flush=True)
+        return cost_eur
 
 
 # ── Traitement du statut reçu ─────────────────────────────────────────────────
 
-def _process_status(charger: ChargerSnapshot, status: dict, poll_time: datetime):
+def _process_status(charger: ChargerSnapshot, status: dict, poll_time: datetime) -> Optional[tuple]:
+    """Met à jour le cache et gère la détection de sessions.
+    Retourne ("start", name, power_w) ou ("end", name, energy_kwh, cost_eur, duration_min) ou None."""
     print(f"[poller] Statut borne {charger.id} : {status}", flush=True)
-    """Met à jour le cache et gère la détection de sessions."""
     cid     = charger.id
     current = status.get('current') or 0.0
     power_w = status.get('power_w') or 0.0
@@ -297,10 +302,13 @@ def _process_status(charger: ChargerSnapshot, status: dict, poll_time: datetime)
             charge.zero_current_count += 1
             if charge.zero_current_count >= CHARGE_END_CONFIRMS:
                 print(f"[poller] Fin de charge confirmée sur borne {cid} ({charge.energy_wh:.3f} Wh)", flush=True)
-                _save_charge_session(charger, charge, poll_time)
+                energy_kwh   = round(charge.energy_wh / 1000, 3)
+                duration_min = (poll_time - charge.start_time).total_seconds() / 60
+                cost_eur     = _save_charge_session(charger, charge, poll_time) or 0.0
                 del _active_charges[cid]
                 _start_pending.pop(cid, None)
                 _persist_active_charges()
+                return ("end", charger.name, energy_kwh, cost_eur, duration_min)
         else:
             charge.zero_current_count = 0
             _persist_active_charges()
@@ -317,8 +325,10 @@ def _process_status(charger: ChargerSnapshot, status: dict, poll_time: datetime)
                 last_poll_time=poll_time,
                 last_power_w=power_w,
                 last_counter_wh=counter_wh,
+                last_awtrix_update=poll_time,  # évite un update immédiat, attend l'intervalle configuré
             )
             _persist_active_charges()
+            return ("start", charger.name, power_w)
         else:
             print(f"[poller] Début de charge en attente borne {cid} ({_start_pending[cid]}/{CHARGE_START_CONFIRMS})", flush=True)
     else:
@@ -341,7 +351,13 @@ async def _poll_once(charger: ChargerSnapshot) -> bool:
                 15,   # timeout réduit pour le poller
             )
         poll_time = datetime.now()
-        _process_status(charger, status, poll_time)
+        notif = _process_status(charger, status, poll_time)
+
+        if notif:
+            if notif[0] == "start":
+                asyncio.create_task(awtrix_notifier.notify_charge_start(notif[1], notif[2]))
+            elif notif[0] == "end":
+                asyncio.create_task(awtrix_notifier.notify_charge_end(notif[1], notif[2], notif[3], notif[4]))
 
         # Mise à jour last_seen
         with Session(engine) as db:
@@ -390,9 +406,25 @@ async def _poller_loop():
                     )
                     for c in rows
                 ]
+                alert_cfg = db.get(AlertConfig, 1)
+                awtrix_interval_s = (alert_cfg.awtrix_update_interval_min if alert_cfg else 30) * 60
 
             for charger in chargers:
                 await _poll_once(charger)
+
+                # Mise à jour périodique Awtrix3 si charge active sur cette borne
+                if charger.id in _active_charges:
+                    charge = _active_charges[charger.id]
+                    now_dt = datetime.now()
+                    elapsed = (now_dt - charge.last_awtrix_update).total_seconds() if charge.last_awtrix_update else awtrix_interval_s
+                    if elapsed >= awtrix_interval_s:
+                        charge.last_awtrix_update = now_dt
+                        asyncio.create_task(awtrix_notifier.notify_charge_update(
+                            charger.name,
+                            round(charge.energy_wh / 1000, 2),
+                            (now_dt - charge.start_time).total_seconds() / 60,
+                        ))
+
                 # Petite pause entre bornes pour laisser respirer l'event loop
                 if len(chargers) > 1:
                     await asyncio.sleep(1)

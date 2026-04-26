@@ -20,6 +20,7 @@ Endpoints disponibles :
   GET    /api/alerts                          Config alertes (V2)
   PUT    /api/alerts                          Met à jour config alertes (V2)
   POST   /api/alerts/check                    Vérifie et envoie alertes si seuil atteint (V2)
+  POST   /api/alerts/awtrix-test             Test notification Awtrix3 (V2)
   GET    /api/reports/monthly/{year}/{month}  Génère un rapport PDF mensuel (V2)
   GET    /api/vehicles                        Liste des véhicules (V2)
   POST   /api/vehicles                        Crée un véhicule (V2)
@@ -63,6 +64,7 @@ from .tariff import DEFAULT_PRICE_HC, DEFAULT_PRICE_HP, compute_tariff, TariffRu
 from .report import generate_monthly_pdf
 from . import udp_client
 from . import charger_poller
+from . import awtrix_notifier
 
 # Répertoire de stockage des images véhicules (dans le volume Docker)
 IMAGES_DIR = Path("/app/data/images")
@@ -97,6 +99,10 @@ def _migrate():
         "ALTER TABLE vehicle ADD COLUMN wltp_winter_mixed_wh_per_km REAL",
         "ALTER TABLE vehicle ADD COLUMN wltp_winter_highway_wh_per_km REAL",
         "ALTER TABLE vehicle ADD COLUMN wltp_winter_city_wh_per_km REAL",
+        # v1.8.0 : notifications Awtrix3 sur alertconfig
+        "ALTER TABLE alertconfig ADD COLUMN awtrix_enabled INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE alertconfig ADD COLUMN awtrix_url TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE alertconfig ADD COLUMN awtrix_update_interval_min INTEGER NOT NULL DEFAULT 30",
     ]
     with engine.connect() as conn:
         for stmt in migrations:
@@ -382,6 +388,9 @@ class AlertConfigOut(BaseModel):
     webhook_url: str
     last_alert_month: str
     updated_at: datetime
+    awtrix_enabled: bool
+    awtrix_url: str
+    awtrix_update_interval_min: int
 
 
 class AlertConfigIn(BaseModel):
@@ -389,6 +398,9 @@ class AlertConfigIn(BaseModel):
     threshold_kwh: float
     threshold_eur: float
     webhook_url: str
+    awtrix_enabled: bool = False
+    awtrix_url: str = ""
+    awtrix_update_interval_min: int = 30
 
 
 # ── Import ───────────────────────────────────────────────────────────────────
@@ -783,11 +795,14 @@ def get_alert_config(db: Session = Depends(get_session)):
 @app.put("/api/alerts", response_model=AlertConfigOut)
 def update_alert_config(body: AlertConfigIn, db: Session = Depends(get_session)):
     alert = db.get(AlertConfig, 1) or AlertConfig(id=1)
-    alert.enabled       = body.enabled
-    alert.threshold_kwh = body.threshold_kwh
-    alert.threshold_eur = body.threshold_eur
-    alert.webhook_url   = body.webhook_url
-    alert.updated_at    = datetime.now()
+    alert.enabled                   = body.enabled
+    alert.threshold_kwh             = body.threshold_kwh
+    alert.threshold_eur             = body.threshold_eur
+    alert.webhook_url               = body.webhook_url
+    alert.awtrix_enabled            = body.awtrix_enabled
+    alert.awtrix_url                = body.awtrix_url
+    alert.awtrix_update_interval_min = body.awtrix_update_interval_min
+    alert.updated_at                = datetime.now()
     db.add(alert)
     db.commit()
     db.refresh(alert)
@@ -853,6 +868,21 @@ async def check_alerts(db: Session = Depends(get_session)):
     db.commit()
 
     return {"sent": True, "message": message}
+
+
+@app.post("/api/alerts/awtrix-test")
+async def test_awtrix_notification(db: Session = Depends(get_session)):
+    """
+    Envoie une notification de test à l'horloge Awtrix3 configurée.
+    Utile pour vérifier la connectivité depuis la page Alertes.
+    """
+    alert = db.get(AlertConfig, 1)
+    if not alert or not alert.awtrix_url:
+        raise HTTPException(status_code=400, detail="URL Awtrix non configurée")
+    ok = await awtrix_notifier.send_test(alert.awtrix_url)
+    if not ok:
+        raise HTTPException(status_code=502, detail="Impossible de joindre l'horloge Awtrix3")
+    return {"ok": True}
 
 
 # ── Rapport PDF mensuel (V2) ──────────────────────────────────────────────────

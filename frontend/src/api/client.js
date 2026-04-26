@@ -192,6 +192,11 @@ export async function checkAlerts() {
   return data
 }
 
+export async function testAwtrix() {
+  const { data } = await api.post('/alerts/awtrix-test')
+  return data
+}
+
 // ── Rapport PDF (V2) ──────────────────────────────────────────────────────────
 
 /**

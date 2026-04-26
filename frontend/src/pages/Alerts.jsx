@@ -1,17 +1,12 @@
 /**
- * Page Alertes — configuration des seuils de consommation mensuelle.
+ * Page Alertes — configuration des seuils de consommation mensuelle et des notifications Awtrix3.
  *
- * Une alerte est envoyée via webhook HTTP POST quand la consommation
- * du mois en cours dépasse le seuil kWh ou € configuré.
+ * Deux sections :
+ *   1. Webhook générique — alerte mensuelle si seuil kWh ou € dépassé (ntfy, Slack, Discord…)
+ *   2. Horloge Awtrix3  — notifications temps réel : début / mise à jour / fin de charge
  *
- * Compatible avec :
- *   - ntfy.sh (self-hosted ou public) : https://ntfy.sh/mon-topic
- *   - Slack : https://hooks.slack.com/services/...
- *   - Discord : https://discord.com/api/webhooks/...
- *   - Tout service acceptant un POST JSON { title, message, priority }
- *
- * Le bouton "Tester maintenant" appelle POST /api/alerts/check manuellement.
- * En production, l'appel est automatiquement fait au chargement du Dashboard.
+ * Le bouton "Tester maintenant" (webhook) appelle POST /api/alerts/check manuellement.
+ * Le bouton "Tester" (Awtrix) envoie une notification de test à l'horloge.
  */
 import React, { useState, useEffect } from 'react'
 import {
@@ -20,19 +15,29 @@ import {
 } from '@mui/material'
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive'
 import SendIcon from '@mui/icons-material/Send'
-import { fetchAlertConfig, updateAlertConfig, checkAlerts } from '../api/client'
+import WifiIcon from '@mui/icons-material/Wifi'
+import { fetchAlertConfig, updateAlertConfig, checkAlerts, testAwtrix } from '../api/client'
 
 export default function Alerts() {
+  // ── Webhook état ─────────────────────────────────────────────────────────────
   const [config, setConfig]         = useState(null)
   const [enabled, setEnabled]       = useState(false)
   const [threshKwh, setThreshKwh]   = useState('')
   const [threshEur, setThreshEur]   = useState('')
   const [webhookUrl, setWebhookUrl] = useState('')
-  const [loading, setLoading]       = useState(true)
-  const [saving, setSaving]         = useState(false)
-  const [checking, setChecking]     = useState(false)
-  const [success, setSuccess]       = useState(null)
-  const [error, setError]           = useState(null)
+
+  // ── Awtrix3 état ─────────────────────────────────────────────────────────────
+  const [awtrixEnabled,   setAwtrixEnabled]   = useState(false)
+  const [awtrixUrl,       setAwtrixUrl]       = useState('')
+  const [awtrixInterval,  setAwtrixInterval]  = useState('30')
+
+  // ── UI état ──────────────────────────────────────────────────────────────────
+  const [loading,       setLoading]       = useState(true)
+  const [saving,        setSaving]        = useState(false)
+  const [checking,      setChecking]      = useState(false)
+  const [testingAwtrix, setTestingAwtrix] = useState(false)
+  const [success,       setSuccess]       = useState(null)
+  const [error,         setError]         = useState(null)
 
   useEffect(() => {
     fetchAlertConfig()
@@ -42,6 +47,9 @@ export default function Alerts() {
         setThreshKwh(d.threshold_kwh > 0 ? String(d.threshold_kwh) : '')
         setThreshEur(d.threshold_eur > 0 ? String(d.threshold_eur) : '')
         setWebhookUrl(d.webhook_url || '')
+        setAwtrixEnabled(d.awtrix_enabled ?? false)
+        setAwtrixUrl(d.awtrix_url || '')
+        setAwtrixInterval(String(d.awtrix_update_interval_min ?? 30))
       })
       .catch(() => setError('Impossible de charger la configuration'))
       .finally(() => setLoading(false))
@@ -52,9 +60,12 @@ export default function Alerts() {
     try {
       const updated = await updateAlertConfig({
         enabled,
-        threshold_kwh: parseFloat(threshKwh) || 0,
-        threshold_eur: parseFloat(threshEur) || 0,
-        webhook_url:   webhookUrl,
+        threshold_kwh:              parseFloat(threshKwh) || 0,
+        threshold_eur:              parseFloat(threshEur) || 0,
+        webhook_url:                webhookUrl,
+        awtrix_enabled:             awtrixEnabled,
+        awtrix_url:                 awtrixUrl,
+        awtrix_update_interval_min: parseInt(awtrixInterval) || 30,
       })
       setConfig(updated)
       setSuccess('Configuration sauvegardée.')
@@ -81,19 +92,37 @@ export default function Alerts() {
     }
   }
 
+  const handleTestAwtrix = async () => {
+    setTestingAwtrix(true); setSuccess(null); setError(null)
+    try {
+      await testAwtrix()
+      setSuccess("Notification de test envoyée à l'horloge Awtrix3.")
+    } catch (e) {
+      setError(e.response?.data?.detail || "Impossible de joindre l'horloge Awtrix3")
+    } finally {
+      setTestingAwtrix(false)
+    }
+  }
+
   if (loading) return <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}><CircularProgress /></Box>
 
   return (
     <Box>
       <Typography variant="h5" fontWeight={700} gutterBottom>Alertes</Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        Recevez une notification quand votre consommation mensuelle dépasse un seuil.
+        Notifications de consommation mensuelle et événements de charge en temps réel.
       </Typography>
 
       {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
       {error   && <Alert severity="error"   sx={{ mb: 2 }}>{error}</Alert>}
 
+      {/* ── Section 1 : Webhook mensuel ─────────────────────────────────────── */}
       <Paper sx={{ p: 3, borderRadius: 3, maxWidth: 560 }}>
+        <Typography variant="h6" fontWeight={600} gutterBottom>Seuils mensuels</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          Recevez une notification si la consommation du mois dépasse un seuil.
+        </Typography>
+
         <FormControlLabel
           control={<Switch checked={enabled} onChange={(e) => setEnabled(e.target.checked)} color="primary" />}
           label={<Typography fontWeight={600}>Alertes activées</Typography>}
@@ -129,14 +158,6 @@ export default function Alerts() {
 
         <Box sx={{ display: 'flex', gap: 2, mt: 3 }}>
           <Button
-            variant="contained"
-            startIcon={saving ? <CircularProgress size={16} /> : <NotificationsActiveIcon />}
-            onClick={handleSave}
-            disabled={saving}
-          >
-            Enregistrer
-          </Button>
-          <Button
             variant="outlined"
             startIcon={checking ? <CircularProgress size={16} /> : <SendIcon />}
             onClick={handleCheck}
@@ -154,13 +175,10 @@ export default function Alerts() {
             </Typography>
           </>
         )}
-      </Paper>
 
-      {/* Info compatibilité */}
-      <Paper sx={{ p: 3, borderRadius: 3, maxWidth: 560, mt: 3 }}>
-        <Typography variant="h6" fontWeight={600} gutterBottom>Format du webhook</Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-          Le backend envoie un POST JSON avec ce payload :
+        <Divider sx={{ my: 2 }} />
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+          Payload envoyé :
         </Typography>
         <Box component="pre" sx={{
           bgcolor: 'rgba(0,0,0,0.3)', p: 1.5, borderRadius: 2,
@@ -179,6 +197,74 @@ export default function Alerts() {
           <Chip label="Tout service POST JSON" size="small" variant="outlined" />
         </Box>
       </Paper>
+
+      {/* ── Section 2 : Horloge Awtrix3 ─────────────────────────────────────── */}
+      <Paper sx={{ p: 3, borderRadius: 3, maxWidth: 560, mt: 3 }}>
+        <Typography variant="h6" fontWeight={600} gutterBottom>Horloge Awtrix3</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          Notifie votre horloge LED à chaque événement de charge en temps réel.
+        </Typography>
+
+        <FormControlLabel
+          control={<Switch checked={awtrixEnabled} onChange={(e) => setAwtrixEnabled(e.target.checked)} color="primary" />}
+          label={<Typography fontWeight={600}>Notifications Awtrix activées</Typography>}
+          sx={{ mb: 2 }}
+        />
+
+        <Grid container spacing={2}>
+          <Grid item xs={12}>
+            <TextField
+              fullWidth size="small" label="URL Awtrix3"
+              value={awtrixUrl} onChange={(e) => setAwtrixUrl(e.target.value)}
+              disabled={!awtrixEnabled}
+              placeholder="http://awtrix.home.lan"
+              helperText="Adresse de l'horloge sur votre réseau local"
+            />
+          </Grid>
+          <Grid item xs={12} sm={6}>
+            <TextField
+              fullWidth size="small" label="Intervalle mise à jour (min)" type="number"
+              value={awtrixInterval} onChange={(e) => setAwtrixInterval(e.target.value)}
+              disabled={!awtrixEnabled}
+              helperText="Fréquence des updates de progression"
+              inputProps={{ min: 5, max: 120, step: 5 }}
+            />
+          </Grid>
+        </Grid>
+
+        <Box sx={{ display: 'flex', gap: 2, mt: 3 }}>
+          <Button
+            variant="outlined"
+            startIcon={testingAwtrix ? <CircularProgress size={16} /> : <WifiIcon />}
+            onClick={handleTestAwtrix}
+            disabled={!awtrixEnabled || !awtrixUrl || testingAwtrix}
+          >
+            Tester la connexion
+          </Button>
+        </Box>
+
+        <Divider sx={{ my: 2 }} />
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          Trois notifications automatiques lors des charges :
+        </Typography>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+          <Chip label="Début — éphémère 10 s" color="success" size="small" />
+          <Chip label={`Update — app persistante toutes les ${awtrixInterval} min`} color="info" size="small" />
+          <Chip label="Fin — hold jusqu'au bouton" color="warning" size="small" />
+        </Box>
+      </Paper>
+
+      {/* ── Bouton Enregistrer global ─────────────────────────────────────────── */}
+      <Box sx={{ mt: 3, maxWidth: 560 }}>
+        <Button
+          variant="contained"
+          startIcon={saving ? <CircularProgress size={16} /> : <NotificationsActiveIcon />}
+          onClick={handleSave}
+          disabled={saving}
+        >
+          Enregistrer
+        </Button>
+      </Box>
     </Box>
   )
 }
