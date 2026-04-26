@@ -46,6 +46,7 @@ async def notify_charge_start(charger_name: str, power_w: float) -> None:
         kw = power_w / 1000
         await _post(config.awtrix_url, "notify", {
             "text": f"Charge {charger_name} {kw:.1f}kW",
+            "icon": "44432",   # prise électrique animée
             "color": "#00FF00",
             "duration": 10,
             "wakeup": True,
@@ -64,6 +65,7 @@ async def notify_charge_update(charger_name: str, energy_kwh: float, duration_mi
         lifetime = config.awtrix_update_interval_min * 60 + 300
         await _post(config.awtrix_url, "custom?name=evstats", {
             "text": f"{energy_kwh:.1f}kWh {_fmt_duration(duration_min)}",
+            "icon": "53214",   # batterie en charge (~60%)
             "color": "#00BFFF",
             "lifetime": lifetime,
         })
@@ -81,6 +83,7 @@ async def notify_charge_end(charger_name: str, energy_kwh: float, cost_eur: floa
         await _post(config.awtrix_url, "custom?name=evstats", {})
         await _post(config.awtrix_url, "notify", {
             "text": f"Fin charge {energy_kwh:.1f}kWh {cost_eur:.2f}EUR {_fmt_duration(duration_min)}",
+            "icon": "53216",   # batterie pleine (~100%)
             "color": "#FF8C00",
             "duration": 30,
             "wakeup": True,
@@ -95,6 +98,7 @@ async def send_test(url: str) -> bool:
     try:
         await _post(url, "notify", {
             "text": "EVSE Stats OK",
+            "icon": "44432",   # prise électrique animée
             "color": "#00FF00",
             "duration": 5,
             "wakeup": True,
