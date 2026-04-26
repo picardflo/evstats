@@ -95,7 +95,7 @@ export default function Alerts() {
   const handleTestAwtrix = async () => {
     setTestingAwtrix(true); setSuccess(null); setError(null)
     try {
-      await testAwtrix()
+      await testAwtrix(awtrixUrl)
       setSuccess("Notification de test envoyée à l'horloge Awtrix3.")
     } catch (e) {
       setError(e.response?.data?.detail || "Impossible de joindre l'horloge Awtrix3")

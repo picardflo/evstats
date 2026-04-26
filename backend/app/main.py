@@ -870,16 +870,19 @@ async def check_alerts(db: Session = Depends(get_session)):
     return {"sent": True, "message": message}
 
 
+class AwtrixTestIn(BaseModel):
+    url: str
+
+
 @app.post("/api/alerts/awtrix-test")
-async def test_awtrix_notification(db: Session = Depends(get_session)):
+async def test_awtrix_notification(body: AwtrixTestIn):
     """
-    Envoie une notification de test à l'horloge Awtrix3 configurée.
+    Envoie une notification de test à l'URL Awtrix3 fournie (pas besoin d'avoir sauvegardé).
     Utile pour vérifier la connectivité depuis la page Alertes.
     """
-    alert = db.get(AlertConfig, 1)
-    if not alert or not alert.awtrix_url:
-        raise HTTPException(status_code=400, detail="URL Awtrix non configurée")
-    ok = await awtrix_notifier.send_test(alert.awtrix_url)
+    if not body.url:
+        raise HTTPException(status_code=400, detail="URL Awtrix non renseignée")
+    ok = await awtrix_notifier.send_test(body.url)
     if not ok:
         raise HTTPException(status_code=502, detail="Impossible de joindre l'horloge Awtrix3")
     return {"ok": True}
