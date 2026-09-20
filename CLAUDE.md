@@ -7,7 +7,7 @@ Contexte du projet pour les sessions Claude Code.
 **evstats** — Application de suivi des sessions de charge pour borne EVSE domestique.
 Stack : FastAPI (backend Python) + React + Vite (frontend) + Caddy (reverse proxy), le tout orchestré par Docker Compose.
 
-Version courante : voir `VERSION` (actuellement 1.7.8).
+Version courante : voir `VERSION` (actuellement 1.8.0).
 
 ## Déploiement
 
@@ -114,6 +114,11 @@ scripts/
 
 1. **README.md** — toujours mettre à jour la section roadmap avec le numéro de version et la description du changement
 2. **VERSION** — bumper avant chaque commit de feature/fix
-3. **Push** — toujours `git push && git push github`
-4. **Tests UI** — impossible depuis cet environnement de dev ; déployer sur la VM et vérifier en navigateur
-5. **Pas de pip global sur la VM** — utiliser `docker run --rm -v $(pwd):/app -w /app python:3.12-slim`
+3. **Tag** — après le dernier commit d'une version, poser un tag annoté sur ce commit :
+   `git tag -a vX.Y.Z -m "vX.Y.Z" && git push --tags && git push github --tags`
+   Convention : le tag pointe sur le **dernier** commit portant ce numéro dans `VERSION`,
+   pas sur le commit de bump — ainsi `git describe` décrit tout commit et le tag correspond
+   à l'état réellement déployé. L'historique v1.0.0 → v1.8.0 est taggué rétroactivement.
+4. **Push** — toujours `git push && git push github`
+5. **Tests UI** — impossible depuis cet environnement de dev ; déployer sur la VM et vérifier en navigateur
+6. **Pas de pip global sur la VM** — utiliser `docker run --rm -v $(pwd):/app -w /app python:3.12-slim`
