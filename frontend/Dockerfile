@@ -1,8 +1,10 @@
 FROM node:20-alpine AS builder
 
 WORKDIR /app
-COPY package.json package-lock.json* ./
-RUN npm install
+# Le lockfile n'est plus optionnel : npm ci l'exige, et c'est lui qui rend
+# le build reproductible (181 dependances transitives figees).
+COPY package.json package-lock.json ./
+RUN npm ci
 COPY . .
 RUN npm run build
 
