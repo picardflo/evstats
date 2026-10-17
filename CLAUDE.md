@@ -152,10 +152,13 @@ Aucun risque de collision : awtrixng-mgr ne gère que les apps nommées `ng` +
    `git tag -a vX.Y.Z -m "vX.Y.Z" && git push --tags && git push github --tags`
    Convention : le tag pointe sur le **dernier** commit portant ce numéro dans `VERSION`,
    pas sur le commit de bump — ainsi `git describe` décrit tout commit et le tag correspond
-   à l'état réellement déployé. L'historique v1.0.0 → v1.8.0 est taggué rétroactivement.
+   à l'état réellement déployé. L'historique est tagué de v1.0.0 à v1.9.0.
 4. **Push** — toujours `git push && git push github`
 5. **Tests UI** — impossible depuis cet environnement de dev ; déployer sur la VM et vérifier en navigateur
 6. **Dépendances Python** — `requirements.txt` épingle aussi `pydantic` : `sqlmodel==0.0.21`
    ne démarre plus avec pydantic ≥ 2.12. Avant de relâcher une borne, vérifier qu'un
    `pip install -r requirements.txt` neuf produit encore un container qui démarre.
-7. **Pas de pip global sur la VM** — utiliser `docker run --rm -v $(pwd):/app -w /app python:3.12-slim`
+7. **Dépendances frontend** — le build utilise `npm ci` et `frontend/package-lock.json`
+   est committé. Toute modification de `package.json` impose de régénérer le lockfile
+   (`npm install` en local) et de le committer, sinon le build casse sur la VM.
+8. **Pas de pip global sur la VM** — utiliser `docker run --rm -v $(pwd):/app -w /app python:3.12-slim`

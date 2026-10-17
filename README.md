@@ -291,12 +291,24 @@ La version est définie dans un **unique fichier `VERSION`** à la racine du rep
 ### Incrémenter la version
 
 ```bash
-echo "1.7.0" > VERSION
-git add VERSION && git commit -m "chore: bump version 1.7.0"
-git push
+echo "1.9.0" > VERSION
+git add VERSION && git commit -m "feat: ... (v1.9.0)"
+git push && git push github          # toujours les deux remotes
 # Sur la VM :
 git pull && docker compose up -d --build
+docker compose restart evstats-api   # VERSION est en bind mount :ro
 ```
+
+Une fois la version validée en production, poser un tag annoté sur son
+**dernier** commit — ce qui rend `git describe` utilisable sur tout
+l'historique et fait correspondre le tag à l'état réellement déployé :
+
+```bash
+git tag -a v1.9.0 -m "v1.9.0"
+git push --tags && git push github --tags
+```
+
+L'historique v1.0.0 → v1.9.0 est tagué rétroactivement.
 
 ---
 
@@ -336,6 +348,28 @@ git pull && docker compose up -d --build
 
 ---
 
+### `awtrixclock`
+
+Horloges Awtrix NG destinataires des notifications de charge (v1.9.0). Remplace
+le couple `awtrix_enabled` / `awtrix_url` de `alertconfig`, qui ne permettait
+qu'une seule horloge ; ces colonnes subsistent pour la reprise automatique au
+premier démarrage, puis sont ignorées.
+
+| Champ | Type | Description |
+|---|---|---|
+| id | INTEGER PK | Identifiant interne |
+| name | TEXT | Libellé libre, ex. « Salon » |
+| url | TEXT | Adresse de l'horloge, ex. `http://awtrix-cl1.home.lan` |
+| enabled | BOOLEAN | Interrupteur général de l'horloge |
+| notify_start | BOOLEAN | Reçoit la notification de début de charge |
+| notify_update | BOOLEAN | Reçoit l'app persistante de suivi |
+| notify_end | BOOLEAN | Reçoit la notification de fin de charge |
+| updated_at | DATETIME | Dernière modification |
+
+> L'intervalle de suivi reste global (`alertconfig.awtrix_update_interval_min`).
+
+---
+
 ## API REST
 
 ### Sessions & stats
@@ -358,7 +392,11 @@ git pull && docker compose up -d --build
 | GET/POST | `/api/config/tariff/periods` | Historique des périodes tarifaires |
 | GET/PUT | `/api/config/tariff/rule` | Règles HC/HP configurables |
 | POST | `/api/config/tariff/recalculate` | Recalcul HC/HP + coûts sur tout l'historique |
-| GET/PUT | `/api/config/alert` | Configuration des alertes webhook |
+| GET/PUT | `/api/alerts` | Seuils webhook + intervalle de suivi Awtrix |
+| POST | `/api/alerts/check` | Vérifie les seuils et envoie le webhook |
+| POST | `/api/alerts/awtrix-test` | Test de connexion d'une horloge (retourne la version du firmware) |
+| GET/POST | `/api/alerts/awtrix/clocks` | Liste / ajoute une horloge Awtrix NG |
+| PUT/DELETE | `/api/alerts/awtrix/clocks/{id}` | Modifie / supprime une horloge |
 
 ### Bornes EVSE (UDP)
 
@@ -437,6 +475,13 @@ git pull
 docker compose up -d --build
 docker compose restart evstats-api   # nécessaire pour recharger VERSION (bind mount :ro)
 ```
+
+> **Dépendances figées.** Le build frontend utilise `npm ci`, qui installe
+> strictement `frontend/package-lock.json`. Si vous modifiez `package.json`,
+> régénérez le lockfile en local (`npm install`) et committez-le, sinon le
+> build échouera — volontairement, plutôt que de produire un frontend
+> silencieusement différent. Côté Python, `requirements.txt` épingle aussi
+> `pydantic` : `sqlmodel==0.0.21` ne démarre plus avec pydantic ≥ 2.12.
 
 ### Backup SQLite (cron)
 
@@ -582,6 +627,7 @@ git pull && docker compose up -d --build
   - l'ancienne configuration mono-horloge est reprise automatiquement au premier démarrage
 - [x] **Réinstallation automatique des icônes** — un reflash vide `/ICONS` ; les icônes manquantes sont téléchargées depuis LaMetric et téléversées sur chaque horloge
 - [x] Le test de connexion remonte la version du firmware, ce qui distingue une horloge éteinte d'une horloge restée en AWTRIX 3
+- [x] Dépendances frontend figées — `package-lock.json` committé et retour à `npm ci` (builds reproductibles)
 - [x] `pydantic` épinglé `<2.12` — sqlmodel 0.0.21 ne démarre plus avec les versions suivantes (un rebuild produisait un container mort)
 
 ### À venir
