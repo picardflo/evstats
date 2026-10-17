@@ -30,7 +30,7 @@ Two data acquisition modes are supported:
 - Dashboard: KPIs, charts, monthly ranking, yearly summary
 - Tariff history with validity periods (recalculate at any time)
 - Consumption alerts via webhook (ntfy, Slack, Discord…)
-- **Awtrix3 clock notifications**: real-time charge events (start / live progress / end) configurable from the UI
+- **Awtrix NG clock notifications**: real-time charge events (start / live progress / end), multiple clocks, each choosing which notifications it receives
 - Monthly PDF reports
 - Vehicle page: specs, photo, cost per 100 km
 - Hourly frequency chart
@@ -571,6 +571,18 @@ git pull && docker compose up -d --build
 - [x] Fin de charge : suppression de l'app + notification hold (orange, reste jusqu'à interaction)
 - [x] Bouton "Tester la connexion" depuis l'interface
 - [x] URL et intervalle configurables sans redéploiement (stockés en base, modifiables à chaud)
+
+### v1.9.0
+- [x] **Portage vers le firmware AWTRIX NG** — l'API d'AWTRIX 3 n'existe plus (routes en 404, clés de payload refusées en 422)
+  - routes : `POST /api/notify` → `POST /api/v1/notifications`, `POST /api/custom?name=X` → `PUT /api/v1/apps/pushed/X`
+  - suppression d'app : corps vide → `DELETE /api/v1/apps/X`
+  - payload : `color` → `textColor`, `duration`/`lifetime` en secondes → `durationMs`/`lifetimeMs` en millisecondes
+- [x] **Multi-horloge** — plusieurs horloges enregistrables, chacune choisissant les notifications qu'elle reçoit (début / suivi / fin)
+  - diffusion en parallèle ; une horloge injoignable n'empêche pas les autres d'être servies
+  - l'ancienne configuration mono-horloge est reprise automatiquement au premier démarrage
+- [x] **Réinstallation automatique des icônes** — un reflash vide `/ICONS` ; les icônes manquantes sont téléchargées depuis LaMetric et téléversées sur chaque horloge
+- [x] Le test de connexion remonte la version du firmware, ce qui distingue une horloge éteinte d'une horloge restée en AWTRIX 3
+- [x] `pydantic` épinglé `<2.12` — sqlmodel 0.0.21 ne démarre plus avec les versions suivantes (un rebuild produisait un container mort)
 
 ### À venir
 - [ ] Support du tarif Tempo EDF (Bleu/Blanc/Rouge) — nécessite intégration API RTE

@@ -20,7 +20,11 @@ Endpoints disponibles :
   GET    /api/alerts                          Config alertes (V2)
   PUT    /api/alerts                          Met à jour config alertes (V2)
   POST   /api/alerts/check                    Vérifie et envoie alertes si seuil atteint (V2)
-  POST   /api/alerts/awtrix-test             Test notification Awtrix3 (V2)
+  POST   /api/alerts/awtrix-test              Test notification horloge Awtrix NG
+  GET    /api/alerts/awtrix/clocks            Liste des horloges Awtrix NG (v1.9.0)
+  POST   /api/alerts/awtrix/clocks            Ajoute une horloge (v1.9.0)
+  PUT    /api/alerts/awtrix/clocks/{id}       Met à jour une horloge (v1.9.0)
+  DELETE /api/alerts/awtrix/clocks/{id}       Supprime une horloge (v1.9.0)
   GET    /api/reports/monthly/{year}/{month}  Génère un rapport PDF mensuel (V2)
   GET    /api/vehicles                        Liste des véhicules (V2)
   POST   /api/vehicles                        Crée un véhicule (V2)
@@ -58,7 +62,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, select, func
 
 from .database import create_db, get_session, engine
-from .models import ChargingSession, ImportLog, TariffConfig, TariffPeriod, TariffRule, AlertConfig, Vehicle, Charger
+from .models import ChargingSession, ImportLog, TariffConfig, TariffPeriod, TariffRule, AlertConfig, Vehicle, Charger, AwtrixClock
 from .parser import parse_xlsx
 from .tariff import DEFAULT_PRICE_HC, DEFAULT_PRICE_HP, compute_tariff, TariffRuleConfig, HcWindow
 from .report import generate_monthly_pdf
@@ -131,6 +135,19 @@ async def lifespan(app: FastAPI):
         if cfg is None:
             cfg = TariffConfig(id=1, price_hc=DEFAULT_PRICE_HC, price_hp=DEFAULT_PRICE_HP)
             db.add(cfg)
+
+        # AwtrixClock : reprise de l'ancienne config mono-horloge (v1.8.0 → v1.9.0).
+        # Ne s'exécute qu'une fois : dès qu'une horloge existe, on ne touche plus
+        # à rien, y compris si l'utilisateur les a toutes supprimées volontairement.
+        if not db.exec(select(AwtrixClock)).first():
+            legacy = db.get(AlertConfig, 1)
+            if legacy and legacy.awtrix_url:
+                db.add(AwtrixClock(
+                    name="Horloge principale",
+                    url=legacy.awtrix_url,
+                    enabled=legacy.awtrix_enabled,
+                ))
+                print(f"[migration] Horloge Awtrix reprise depuis AlertConfig : {legacy.awtrix_url}", flush=True)
 
         # TariffPeriod : seed avec les tarifs par défaut si vide
         # L'utilisateur devra ajuster la date et les prix via l'interface Paramètres.
@@ -398,9 +415,11 @@ class AlertConfigIn(BaseModel):
     threshold_kwh: float
     threshold_eur: float
     webhook_url: str
+    awtrix_update_interval_min: int = 30
+    # Champs mono-horloge conservés pour ne pas casser un ancien client : ils
+    # sont acceptés mais ignorés depuis la v1.9.0 (voir table AwtrixClock).
     awtrix_enabled: bool = False
     awtrix_url: str = ""
-    awtrix_update_interval_min: int = 30
 
 
 # ── Import ───────────────────────────────────────────────────────────────────
@@ -799,8 +818,8 @@ def update_alert_config(body: AlertConfigIn, db: Session = Depends(get_session))
     alert.threshold_kwh             = body.threshold_kwh
     alert.threshold_eur             = body.threshold_eur
     alert.webhook_url               = body.webhook_url
-    alert.awtrix_enabled            = body.awtrix_enabled
-    alert.awtrix_url                = body.awtrix_url
+    # awtrix_enabled / awtrix_url ne sont plus écrits : les horloges vivent
+    # désormais dans AwtrixClock. Seul l'intervalle reste global.
     alert.awtrix_update_interval_min = body.awtrix_update_interval_min
     alert.updated_at                = datetime.now()
     db.add(alert)
@@ -877,15 +896,80 @@ class AwtrixTestIn(BaseModel):
 @app.post("/api/alerts/awtrix-test")
 async def test_awtrix_notification(body: AwtrixTestIn):
     """
-    Envoie une notification de test à l'URL Awtrix3 fournie (pas besoin d'avoir sauvegardé).
-    Utile pour vérifier la connectivité depuis la page Alertes.
+    Envoie une notification de test à l'URL fournie (pas besoin d'avoir sauvegardé).
+
+    Vérifie d'abord /api/v1/version : une horloge restée en firmware AWTRIX 3
+    et une horloge éteinte donnent le même symptôme côté UI, le détail retourné
+    permet de les distinguer.
     """
     if not body.url:
-        raise HTTPException(status_code=400, detail="URL Awtrix non renseignée")
-    ok = await awtrix_notifier.send_test(body.url)
+        raise HTTPException(status_code=400, detail="URL de l'horloge non renseignée")
+    ok, detail = await awtrix_notifier.send_test(body.url)
     if not ok:
-        raise HTTPException(status_code=502, detail="Impossible de joindre l'horloge Awtrix3")
-    return {"ok": True}
+        raise HTTPException(status_code=502, detail=detail)
+    return {"ok": True, "detail": detail}
+
+
+# ── Horloges Awtrix NG (v1.9.0) ──────────────────────────────────────────────
+
+class AwtrixClockOut(BaseModel):
+    id: int
+    name: str
+    url: str
+    enabled: bool
+    notify_start: bool
+    notify_update: bool
+    notify_end: bool
+
+
+class AwtrixClockIn(BaseModel):
+    name: str = ""
+    url: str = ""
+    enabled: bool = True
+    notify_start: bool = True
+    notify_update: bool = True
+    notify_end: bool = True
+
+
+@app.get("/api/alerts/awtrix/clocks", response_model=List[AwtrixClockOut])
+def list_awtrix_clocks(db: Session = Depends(get_session)):
+    return db.exec(select(AwtrixClock).order_by(AwtrixClock.id)).all()
+
+
+@app.post("/api/alerts/awtrix/clocks", response_model=AwtrixClockOut, status_code=201)
+def create_awtrix_clock(body: AwtrixClockIn, db: Session = Depends(get_session)):
+    if not body.url.strip():
+        raise HTTPException(status_code=400, detail="URL de l'horloge requise")
+    clock = AwtrixClock(**body.model_dump(), updated_at=datetime.now())
+    db.add(clock)
+    db.commit()
+    db.refresh(clock)
+    return clock
+
+
+@app.put("/api/alerts/awtrix/clocks/{clock_id}", response_model=AwtrixClockOut)
+def update_awtrix_clock(clock_id: int, body: AwtrixClockIn, db: Session = Depends(get_session)):
+    clock = db.get(AwtrixClock, clock_id)
+    if not clock:
+        raise HTTPException(status_code=404, detail="Horloge introuvable")
+    if not body.url.strip():
+        raise HTTPException(status_code=400, detail="URL de l'horloge requise")
+    for field, value in body.model_dump().items():
+        setattr(clock, field, value)
+    clock.updated_at = datetime.now()
+    db.commit()
+    db.refresh(clock)
+    return clock
+
+
+@app.delete("/api/alerts/awtrix/clocks/{clock_id}")
+def delete_awtrix_clock(clock_id: int, db: Session = Depends(get_session)):
+    clock = db.get(AwtrixClock, clock_id)
+    if not clock:
+        raise HTTPException(status_code=404, detail="Horloge introuvable")
+    db.delete(clock)
+    db.commit()
+    return {"deleted": clock_id}
 
 
 # ── Rapport PDF mensuel (V2) ──────────────────────────────────────────────────

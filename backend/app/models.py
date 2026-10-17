@@ -10,6 +10,7 @@ Tables :
   - alert_config      : configuration des alertes de consommation (V2)
   - vehicle           : véhicules électriques avec specs (V2)
   - charger           : bornes de recharge configurées (intégration UDP directe) (V2)
+  - awtrix_clock      : horloges Awtrix NG destinataires des notifications (v1.9.0)
 """
 
 from datetime import datetime, date
@@ -199,3 +200,27 @@ class AlertConfig(SQLModel, table=True):
     awtrix_enabled:             bool = Field(default=False)
     awtrix_url:                 str  = Field(default="")   # ex: http://awtrix.home.lan
     awtrix_update_interval_min: int  = Field(default=30)   # minutes entre deux updates
+
+
+class AwtrixClock(SQLModel, table=True):
+    """
+    Une horloge Awtrix NG destinataire des notifications de charge (v1.9.0).
+
+    Remplace le couple awtrix_enabled / awtrix_url de AlertConfig, qui ne
+    permettait qu'une seule horloge. Les champs legacy sont conservés sur
+    AlertConfig le temps de la migration (voir run_migrations dans main.py),
+    puis ignorés.
+
+    Chaque horloge choisit les notifications qu'elle reçoit : on peut vouloir
+    le suivi permanent sur l'horloge du bureau et seulement début/fin au salon.
+
+    L'intervalle de mise à jour reste global (AlertConfig.awtrix_update_interval_min).
+    """
+    id:             Optional[int] = Field(default=None, primary_key=True)
+    name:           str  = Field(default="")       # libellé libre, ex: "Salon"
+    url:            str  = Field(default="")       # ex: http://awtrix-cl1.home.lan
+    enabled:        bool = Field(default=True)     # interrupteur général de l'horloge
+    notify_start:   bool = Field(default=True)     # notification de début de charge
+    notify_update:  bool = Field(default=True)     # app persistante pendant la charge
+    notify_end:     bool = Field(default=True)     # notification de fin de charge
+    updated_at:     datetime = Field(default_factory=datetime.now)

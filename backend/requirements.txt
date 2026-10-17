@@ -1,6 +1,13 @@
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
 sqlmodel==0.0.21
+# Dépendance transitive de sqlmodel, épinglée volontairement (v1.9.0).
+# sqlmodel 0.0.21 est incompatible avec pydantic >= 2.12 : la collecte des
+# champs du métaclasse échoue au chargement de models.py, avec
+# "Field 'id' requires a type annotation" sur des champs pourtant annotés.
+# Vérifié sur 2.12.3, 2.13.3 et 2.14.1 — toutes cassent. Sans cette borne,
+# un simple rebuild de l'image produit un container qui ne démarre plus.
+pydantic>=2.9,<2.12
 pandas==2.2.3
 openpyxl==3.1.5
 python-multipart==0.0.12

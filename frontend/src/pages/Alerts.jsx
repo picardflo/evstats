@@ -1,22 +1,37 @@
 /**
- * Page Alertes — configuration des seuils de consommation mensuelle et des notifications Awtrix3.
+ * Page Alertes — seuils de consommation mensuelle et notifications Awtrix NG.
  *
  * Deux sections :
  *   1. Webhook générique — alerte mensuelle si seuil kWh ou € dépassé (ntfy, Slack, Discord…)
- *   2. Horloge Awtrix3  — notifications temps réel : début / mise à jour / fin de charge
+ *   2. Horloges Awtrix NG — notifications temps réel : début / suivi / fin de charge
  *
- * Le bouton "Tester maintenant" (webhook) appelle POST /api/alerts/check manuellement.
- * Le bouton "Tester" (Awtrix) envoie une notification de test à l'horloge.
+ * Depuis la v1.9.0, plusieurs horloges peuvent être enregistrées, et chacune
+ * choisit les notifications qu'elle reçoit : on peut vouloir le suivi permanent
+ * sur l'horloge du bureau et seulement début/fin au salon.
+ *
+ * Le bouton "Tester maintenant" (webhook) appelle POST /api/alerts/check.
+ * Le bouton "Tester" d'une horloge envoie une notification sans sauvegarder,
+ * en utilisant l'URL saisie dans le champ.
  */
 import React, { useState, useEffect } from 'react'
 import {
   Box, Typography, Paper, TextField, Button, Alert, CircularProgress,
-  Switch, FormControlLabel, Grid, Divider, Chip,
+  Switch, FormControlLabel, Grid, Divider, Chip, Checkbox, IconButton, Tooltip,
 } from '@mui/material'
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive'
 import SendIcon from '@mui/icons-material/Send'
 import WifiIcon from '@mui/icons-material/Wifi'
-import { fetchAlertConfig, updateAlertConfig, checkAlerts, testAwtrix } from '../api/client'
+import AddIcon from '@mui/icons-material/Add'
+import DeleteIcon from '@mui/icons-material/Delete'
+import {
+  fetchAlertConfig, updateAlertConfig, checkAlerts, testAwtrix,
+  fetchAwtrixClocks, createAwtrixClock, updateAwtrixClock, deleteAwtrixClock,
+} from '../api/client'
+
+const BLANK_CLOCK = {
+  id: null, name: '', url: '',
+  enabled: true, notify_start: true, notify_update: true, notify_end: true,
+}
 
 export default function Alerts() {
   // ── Webhook état ─────────────────────────────────────────────────────────────
@@ -26,34 +41,54 @@ export default function Alerts() {
   const [threshEur, setThreshEur]   = useState('')
   const [webhookUrl, setWebhookUrl] = useState('')
 
-  // ── Awtrix3 état ─────────────────────────────────────────────────────────────
-  const [awtrixEnabled,   setAwtrixEnabled]   = useState(false)
-  const [awtrixUrl,       setAwtrixUrl]       = useState('')
-  const [awtrixInterval,  setAwtrixInterval]  = useState('30')
+  // ── Awtrix état ──────────────────────────────────────────────────────────────
+  const [clocks, setClocks]         = useState([])
+  const [awtrixInterval, setAwtrixInterval] = useState('30')
 
   // ── UI état ──────────────────────────────────────────────────────────────────
-  const [loading,       setLoading]       = useState(true)
-  const [saving,        setSaving]        = useState(false)
-  const [checking,      setChecking]      = useState(false)
-  const [testingAwtrix, setTestingAwtrix] = useState(false)
-  const [success,       setSuccess]       = useState(null)
-  const [error,         setError]         = useState(null)
+  const [loading,  setLoading]  = useState(true)
+  const [saving,   setSaving]   = useState(false)
+  const [checking, setChecking] = useState(false)
+  const [testing,  setTesting]  = useState(null)   // index de l'horloge en cours de test
+  const [success,  setSuccess]  = useState(null)
+  const [error,    setError]    = useState(null)
 
   useEffect(() => {
-    fetchAlertConfig()
-      .then((d) => {
+    Promise.all([fetchAlertConfig(), fetchAwtrixClocks()])
+      .then(([d, list]) => {
         setConfig(d)
         setEnabled(d.enabled)
         setThreshKwh(d.threshold_kwh > 0 ? String(d.threshold_kwh) : '')
         setThreshEur(d.threshold_eur > 0 ? String(d.threshold_eur) : '')
         setWebhookUrl(d.webhook_url || '')
-        setAwtrixEnabled(d.awtrix_enabled ?? false)
-        setAwtrixUrl(d.awtrix_url || '')
         setAwtrixInterval(String(d.awtrix_update_interval_min ?? 30))
+        setClocks(list)
       })
       .catch(() => setError('Impossible de charger la configuration'))
       .finally(() => setLoading(false))
   }, [])
+
+  const patchClock = (index, patch) =>
+    setClocks((prev) => prev.map((c, i) => (i === index ? { ...c, ...patch } : c)))
+
+  const handleAddClock = () => setClocks((prev) => [...prev, { ...BLANK_CLOCK }])
+
+  const handleDeleteClock = async (index) => {
+    const clock = clocks[index]
+    // Une horloge jamais enregistrée n'existe qu'ici : pas d'appel API.
+    if (clock.id == null) {
+      setClocks((prev) => prev.filter((_, i) => i !== index))
+      return
+    }
+    setSuccess(null); setError(null)
+    try {
+      await deleteAwtrixClock(clock.id)
+      setClocks((prev) => prev.filter((_, i) => i !== index))
+      setSuccess(`Horloge « ${clock.name || clock.url} » supprimée.`)
+    } catch (e) {
+      setError(e.response?.data?.detail || 'Suppression impossible')
+    }
+  }
 
   const handleSave = async () => {
     setSaving(true); setSuccess(null); setError(null)
@@ -63,14 +98,27 @@ export default function Alerts() {
         threshold_kwh:              parseFloat(threshKwh) || 0,
         threshold_eur:              parseFloat(threshEur) || 0,
         webhook_url:                webhookUrl,
-        awtrix_enabled:             awtrixEnabled,
-        awtrix_url:                 awtrixUrl,
         awtrix_update_interval_min: parseInt(awtrixInterval) || 30,
       })
       setConfig(updated)
+
+      // Les horloges sans URL sont ignorées plutôt que refusées : une ligne
+      // ajoutée puis laissée vide ne doit pas bloquer l'enregistrement du reste.
+      for (const clock of clocks) {
+        if (!clock.url.trim()) continue
+        const payload = {
+          name: clock.name, url: clock.url.trim(), enabled: clock.enabled,
+          notify_start: clock.notify_start,
+          notify_update: clock.notify_update,
+          notify_end: clock.notify_end,
+        }
+        if (clock.id == null) await createAwtrixClock(payload)
+        else                  await updateAwtrixClock(clock.id, payload)
+      }
+      setClocks(await fetchAwtrixClocks())
       setSuccess('Configuration sauvegardée.')
-    } catch {
-      setError('Erreur lors de la sauvegarde')
+    } catch (e) {
+      setError(e.response?.data?.detail || 'Erreur lors de la sauvegarde')
     } finally {
       setSaving(false)
     }
@@ -92,15 +140,15 @@ export default function Alerts() {
     }
   }
 
-  const handleTestAwtrix = async () => {
-    setTestingAwtrix(true); setSuccess(null); setError(null)
+  const handleTestClock = async (index) => {
+    setTesting(index); setSuccess(null); setError(null)
     try {
-      await testAwtrix(awtrixUrl)
-      setSuccess("Notification de test envoyée à l'horloge Awtrix3.")
+      const r = await testAwtrix(clocks[index].url)
+      setSuccess(`Notification de test envoyée${r?.detail ? ` — ${r.detail}` : ''}.`)
     } catch (e) {
-      setError(e.response?.data?.detail || "Impossible de joindre l'horloge Awtrix3")
+      setError(e.response?.data?.detail || "Impossible de joindre l'horloge")
     } finally {
-      setTestingAwtrix(false)
+      setTesting(null)
     }
   }
 
@@ -117,7 +165,7 @@ export default function Alerts() {
       {error   && <Alert severity="error"   sx={{ mb: 2 }}>{error}</Alert>}
 
       {/* ── Section 1 : Webhook mensuel ─────────────────────────────────────── */}
-      <Paper sx={{ p: 3, borderRadius: 3, maxWidth: 560 }}>
+      <Paper sx={{ p: 3, borderRadius: 3, maxWidth: 680 }}>
         <Typography variant="h6" fontWeight={600} gutterBottom>Seuils mensuels</Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           Recevez une notification si la consommation du mois dépasse un seuil.
@@ -198,50 +246,104 @@ export default function Alerts() {
         </Box>
       </Paper>
 
-      {/* ── Section 2 : Horloge Awtrix3 ─────────────────────────────────────── */}
-      <Paper sx={{ p: 3, borderRadius: 3, maxWidth: 560, mt: 3 }}>
-        <Typography variant="h6" fontWeight={600} gutterBottom>Horloge Awtrix3</Typography>
+      {/* ── Section 2 : Horloges Awtrix NG ──────────────────────────────────── */}
+      <Paper sx={{ p: 3, borderRadius: 3, maxWidth: 680, mt: 3 }}>
+        <Typography variant="h6" fontWeight={600} gutterBottom>Horloges Awtrix NG</Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Notifie votre horloge LED à chaque événement de charge en temps réel.
+          Notifie vos horloges LED à chaque événement de charge. Chaque horloge
+          choisit les notifications qu'elle reçoit. Firmware AWTRIX NG requis —
+          l'API d'AWTRIX 3 n'est plus compatible.
         </Typography>
 
-        <FormControlLabel
-          control={<Switch checked={awtrixEnabled} onChange={(e) => setAwtrixEnabled(e.target.checked)} color="primary" />}
-          label={<Typography fontWeight={600}>Notifications Awtrix activées</Typography>}
-          sx={{ mb: 2 }}
-        />
-
-        <Grid container spacing={2}>
-          <Grid item xs={12}>
-            <TextField
-              fullWidth size="small" label="URL Awtrix3"
-              value={awtrixUrl} onChange={(e) => setAwtrixUrl(e.target.value)}
-              disabled={!awtrixEnabled}
-              placeholder="http://awtrix.home.lan"
-              helperText="Adresse de l'horloge sur votre réseau local"
-            />
-          </Grid>
+        <Grid container spacing={2} sx={{ mb: 1 }}>
           <Grid item xs={12} sm={6}>
             <TextField
-              fullWidth size="small" label="Intervalle mise à jour (min)" type="number"
+              fullWidth size="small" label="Intervalle de suivi (min)" type="number"
               value={awtrixInterval} onChange={(e) => setAwtrixInterval(e.target.value)}
-              disabled={!awtrixEnabled}
-              helperText="Fréquence des updates de progression"
+              helperText="Commun à toutes les horloges"
               inputProps={{ min: 5, max: 120, step: 5 }}
             />
           </Grid>
         </Grid>
 
-        <Box sx={{ display: 'flex', gap: 2, mt: 3 }}>
-          <Button
-            variant="outlined"
-            startIcon={testingAwtrix ? <CircularProgress size={16} /> : <WifiIcon />}
-            onClick={handleTestAwtrix}
-            disabled={!awtrixEnabled || !awtrixUrl || testingAwtrix}
-          >
-            Tester la connexion
-          </Button>
-        </Box>
+        {clocks.length === 0 && (
+          <Alert severity="info" sx={{ my: 2 }}>
+            Aucune horloge enregistrée. Ajoutez-en une pour recevoir les notifications de charge.
+          </Alert>
+        )}
+
+        {clocks.map((clock, i) => (
+          <Box key={clock.id ?? `new-${i}`} sx={{
+            border: '1px solid', borderColor: 'divider', borderRadius: 2,
+            p: 2, mt: 2, opacity: clock.enabled ? 1 : 0.6,
+          }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={clock.enabled}
+                    onChange={(e) => patchClock(i, { enabled: e.target.checked })}
+                    color="primary"
+                  />
+                }
+                label={<Typography fontWeight={600}>{clock.name || 'Horloge sans nom'}</Typography>}
+              />
+              <Tooltip title="Supprimer cette horloge">
+                <IconButton color="error" size="small" onClick={() => handleDeleteClock(i)}>
+                  <DeleteIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </Box>
+
+            <Grid container spacing={2}>
+              <Grid item xs={12} sm={5}>
+                <TextField
+                  fullWidth size="small" label="Nom" value={clock.name}
+                  onChange={(e) => patchClock(i, { name: e.target.value })}
+                  placeholder="Salon"
+                />
+              </Grid>
+              <Grid item xs={12} sm={7}>
+                <TextField
+                  fullWidth size="small" label="URL" value={clock.url}
+                  onChange={(e) => patchClock(i, { url: e.target.value })}
+                  placeholder="http://awtrix-cl1.home.lan"
+                />
+              </Grid>
+            </Grid>
+
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 0.5, mt: 1 }}>
+              <FormControlLabel
+                control={<Checkbox size="small" checked={clock.notify_start}
+                  onChange={(e) => patchClock(i, { notify_start: e.target.checked })} />}
+                label={<Typography variant="body2">Début</Typography>}
+              />
+              <FormControlLabel
+                control={<Checkbox size="small" checked={clock.notify_update}
+                  onChange={(e) => patchClock(i, { notify_update: e.target.checked })} />}
+                label={<Typography variant="body2">Suivi en cours</Typography>}
+              />
+              <FormControlLabel
+                control={<Checkbox size="small" checked={clock.notify_end}
+                  onChange={(e) => patchClock(i, { notify_end: e.target.checked })} />}
+                label={<Typography variant="body2">Fin</Typography>}
+              />
+              <Box sx={{ flexGrow: 1 }} />
+              <Button
+                size="small" variant="outlined"
+                startIcon={testing === i ? <CircularProgress size={14} /> : <WifiIcon />}
+                onClick={() => handleTestClock(i)}
+                disabled={!clock.url || testing !== null}
+              >
+                Tester
+              </Button>
+            </Box>
+          </Box>
+        ))}
+
+        <Button startIcon={<AddIcon />} onClick={handleAddClock} sx={{ mt: 2 }}>
+          Ajouter une horloge
+        </Button>
 
         <Divider sx={{ my: 2 }} />
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
@@ -249,13 +351,13 @@ export default function Alerts() {
         </Typography>
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
           <Chip label="Début — éphémère 10 s" color="success" size="small" />
-          <Chip label={`Update — app persistante toutes les ${awtrixInterval} min`} color="info" size="small" />
-          <Chip label="Fin — hold jusqu'au bouton" color="warning" size="small" />
+          <Chip label={`Suivi — app persistante toutes les ${awtrixInterval} min`} color="info" size="small" />
+          <Chip label="Fin — éphémère 30 s" color="warning" size="small" />
         </Box>
       </Paper>
 
       {/* ── Bouton Enregistrer global ─────────────────────────────────────────── */}
-      <Box sx={{ mt: 3, maxWidth: 560 }}>
+      <Box sx={{ mt: 3, maxWidth: 680 }}>
         <Button
           variant="contained"
           startIcon={saving ? <CircularProgress size={16} /> : <NotificationsActiveIcon />}

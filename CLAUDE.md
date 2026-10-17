@@ -7,7 +7,7 @@ Contexte du projet pour les sessions Claude Code.
 **evstats** — Application de suivi des sessions de charge pour borne EVSE domestique.
 Stack : FastAPI (backend Python) + React + Vite (frontend) + Caddy (reverse proxy), le tout orchestré par Docker Compose.
 
-Version courante : voir `VERSION` (actuellement 1.8.0).
+Version courante : voir `VERSION` (actuellement 1.9.0).
 
 ## Déploiement
 
@@ -60,6 +60,7 @@ backend/app/
   tariff.py          — Calcul des tarifs HC/HP
   parser.py          — Import XLSX (historique)
   report.py          — Export/rapports
+  awtrix_notifier.py — Notifications horloges Awtrix NG (multi-horloge)
 
 frontend/src/
   pages/             — Dashboard, Sessions, Chargers, Vehicle, Import, Settings, Alerts
@@ -93,6 +94,39 @@ scripts/
 
 > Attention : le champ [15:17] (uint16) fluctue indépendamment de l'énergie réelle — ne pas utiliser.
 
+## Horloges Awtrix NG
+
+- Firmware **AWTRIX NG** requis (testé en 1.1.2). L'API d'AWTRIX 3 n'existe plus :
+  ses routes répondent 404 et ses clés de payload sont refusées en 422.
+- Horloges du homelab : `awtrix-cl1.home.lan` (Salon) et `awtrix-cl2.home.lan` (Bureau).
+  **cl2 est l'horloge de test** ; cl1 est en service et protégée côté awtrixng-mgr.
+- Plusieurs horloges enregistrables (table `AwtrixClock`), chacune choisissant
+  les notifications qu'elle reçoit. Intervalle de suivi commun à toutes.
+
+### Portage AWTRIX 3 → NG
+
+| AWTRIX 3 | AWTRIX NG |
+|---|---|
+| `POST /api/notify` | `POST /api/v1/notifications` |
+| `POST /api/custom?name=X` | `PUT /api/v1/apps/pushed/X` |
+| `POST /api/custom?name=X` + corps vide | `DELETE /api/v1/apps/X` |
+| `color` | `textColor` |
+| `duration` (s) | `durationMs` (ms) |
+| `lifetime` (s) | `lifetimeMs` (ms) |
+
+> `wakeup` reste valide mais **uniquement** sur la route des notifications.
+> Un reflash vide `/ICONS` : les icônes sont réinstallées automatiquement
+> depuis LaMetric lors du premier envoi.
+
+> Référence complète mesurée sur matériel réel : repo **awtrixng-mgr**,
+> `docs/ng-api/payload-keys.md` et `docs/ng-vs-awtrix3.md`.
+
+### Cohabitation avec awtrixng-mgr
+
+Aucun risque de collision : awtrixng-mgr ne gère que les apps nommées `ng` +
+6 chiffres (`is_managed`), evstats pousse `evstats`. NG supprime au **nom exact**
+(plus par préfixe comme AWTRIX 3), donc chacun ne touche que les siennes.
+
 ## Logique de suivi de session (charger_poller.py)
 
 - **Début** : 2 lectures consécutives > 0.5A → session confirmée (`CHARGE_START_CONFIRMS = 2`)
@@ -121,4 +155,7 @@ scripts/
    à l'état réellement déployé. L'historique v1.0.0 → v1.8.0 est taggué rétroactivement.
 4. **Push** — toujours `git push && git push github`
 5. **Tests UI** — impossible depuis cet environnement de dev ; déployer sur la VM et vérifier en navigateur
-6. **Pas de pip global sur la VM** — utiliser `docker run --rm -v $(pwd):/app -w /app python:3.12-slim`
+6. **Dépendances Python** — `requirements.txt` épingle aussi `pydantic` : `sqlmodel==0.0.21`
+   ne démarre plus avec pydantic ≥ 2.12. Avant de relâcher une borne, vérifier qu'un
+   `pip install -r requirements.txt` neuf produit encore un container qui démarre.
+7. **Pas de pip global sur la VM** — utiliser `docker run --rm -v $(pwd):/app -w /app python:3.12-slim`

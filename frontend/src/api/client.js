@@ -197,6 +197,28 @@ export async function testAwtrix(url) {
   return data
 }
 
+// ── Horloges Awtrix NG (v1.9.0) ──────────────────────────────────────────────
+
+export async function fetchAwtrixClocks() {
+  const { data } = await api.get('/alerts/awtrix/clocks')
+  return data
+}
+
+export async function createAwtrixClock(payload) {
+  const { data } = await api.post('/alerts/awtrix/clocks', payload)
+  return data
+}
+
+export async function updateAwtrixClock(id, payload) {
+  const { data } = await api.put(`/alerts/awtrix/clocks/${id}`, payload)
+  return data
+}
+
+export async function deleteAwtrixClock(id) {
+  const { data } = await api.delete(`/alerts/awtrix/clocks/${id}`)
+  return data
+}
+
 // ── Rapport PDF (V2) ──────────────────────────────────────────────────────────
 
 /**
